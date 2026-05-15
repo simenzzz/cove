@@ -27,6 +27,24 @@ pub enum ClientMessage {
         last_seq: HashMap<String, u64>,
     },
     Heartbeat,
+    // ── Phase 2: collaborative editing ──
+    CollabSubscribe {
+        post_id: String,
+    },
+    CollabUnsubscribe {
+        post_id: String,
+    },
+    CollabUpdate {
+        post_id: String,
+        /// Base64-encoded Yjs update bytes.
+        update_b64: String,
+    },
+    AwarenessUpdate {
+        post_id: String,
+        /// Opaque awareness state (cursor pos, selection, idle ts) — passed
+        /// through unchanged to other subscribers.
+        state: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +94,30 @@ pub enum ServerMessage {
     },
     HeartbeatAck,
     Error {
+        message: String,
+    },
+    // ── Phase 2: collaborative editing ──
+    CollabState {
+        post_id: String,
+        /// Base64-encoded full Yjs state (sent on subscribe so the client can
+        /// hydrate its local Y.Doc without paying for replay history).
+        state_b64: String,
+        /// Base64-encoded state vector (so client can request a diff later).
+        state_vector_b64: String,
+    },
+    CollabUpdate {
+        post_id: String,
+        update_b64: String,
+        from_user: String,
+    },
+    AwarenessState {
+        post_id: String,
+        /// `user_id -> opaque state`
+        users: HashMap<String, serde_json::Value>,
+    },
+    CollabError {
+        post_id: String,
+        code: String,
         message: String,
     },
 }

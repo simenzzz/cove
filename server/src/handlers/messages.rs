@@ -49,8 +49,8 @@ mod tests {
     use crate::models::channel::{Channel, ChannelType};
     use crate::models::message::Message;
     use crate::repositories::{
-        channel::MockChannelRepo, message::MockMessageRepo, server::MockServerRepo,
-        social::MockSocialRepo, user::MockUserRepo,
+        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
+        server::MockServerRepo, social::MockSocialRepo, user::MockUserRepo,
     };
     use mockall::predicate::eq;
     use pretty_assertions::assert_eq;
@@ -97,6 +97,7 @@ mod tests {
             channels: Arc::new(channels),
             messages: Arc::new(messages),
             social: Arc::new(MockSocialRepo::new()),
+            posts: Arc::new(MockPostRepo::new()),
         }
     }
 

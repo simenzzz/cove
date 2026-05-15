@@ -1,4 +1,5 @@
 mod auth;
+mod collab;
 mod config;
 mod error;
 mod handlers;
@@ -23,6 +24,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+use collab::CollabManager;
 use config::AppConfig;
 use repositories::Repos;
 use ws::room_manager::RoomManager;
@@ -36,6 +38,7 @@ pub struct AppState {
     pub repos: Repos,
     pub room_manager: RoomManager,
     pub user_connections: UserConnectionRegistry,
+    pub collab: CollabManager,
     pub metrics_handle: metrics_exporter_prometheus::PrometheusHandle,
 }
 
@@ -78,6 +81,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let repos = Repos::new(db.clone());
     let room_manager = RoomManager::new();
     let user_connections = UserConnectionRegistry::new();
+    let collab = CollabManager::new(repos.posts.clone());
 
     let state = AppState {
         config,
@@ -86,6 +90,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         repos,
         room_manager,
         user_connections,
+        collab,
         metrics_handle: prometheus_handle,
     };
 
@@ -147,6 +152,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // Discovery routes
         .route("/api/discover/servers", get(handlers::discovery::discover_servers))
+        // Post routes (Phase 2 — collaborative drafts)
+        .route("/api/posts", post(handlers::posts::create_draft))
+        .route("/api/posts/{post_id}", get(handlers::posts::get_post))
+        .route("/api/posts/{post_id}/publish", post(handlers::posts::publish_post))
         .layer(from_fn(
             middleware::request_id::request_id_middleware,
         ))

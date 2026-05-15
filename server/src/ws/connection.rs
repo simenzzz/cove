@@ -416,6 +416,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
                             }
                         }
                     }
+                    // Phase 2 collab message handling is wired through the
+                    // CollabManager (see crate::collab). The dispatch lives
+                    // there to keep this connection loop focused on chat.
+                    ref m @ (ClientMessage::CollabSubscribe { ref post_id }
+                    | ClientMessage::CollabUnsubscribe { ref post_id }
+                    | ClientMessage::CollabUpdate { ref post_id, .. }
+                    | ClientMessage::AwarenessUpdate { ref post_id, .. }) => {
+                        state
+                            .collab
+                            .dispatch(post_id.clone(), m.clone(), &user_id, out_tx.clone())
+                            .await;
+                    }
                 }
             }
             Message::Close(_) => break,

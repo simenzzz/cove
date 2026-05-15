@@ -1,0 +1,219 @@
+use axum::extract::{Path, State};
+use axum::Json;
+use serde::Deserialize;
+use serde_json::{json, Value};
+
+use crate::auth::middleware::AuthUser;
+use crate::collab::doc::CollabDoc;
+use crate::error::AppError;
+use crate::repositories::Repos;
+
+#[derive(Debug, Deserialize)]
+pub struct CreateDraftInput {
+    pub title: String,
+}
+
+pub async fn create_draft(
+    State(repos): State<Repos>,
+    AuthUser(claims): AuthUser,
+    Json(input): Json<CreateDraftInput>,
+) -> Result<Json<Value>, AppError> {
+    let title = input.title.trim();
+    if title.is_empty() || title.len() > 200 {
+        return Err(AppError::BadRequest("Title must be 1-200 characters".into()));
+    }
+
+    let post = repos
+        .posts
+        .create_draft(&claims.sub, title.to_string())
+        .await?;
+    Ok(Json(json!({ "post": post })))
+}
+
+pub async fn get_post(
+    State(repos): State<Repos>,
+    AuthUser(_claims): AuthUser,
+    Path(post_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    // Authorization for collab subscription is enforced at the WS layer;
+    // here we just return the bootstrap snapshot to anyone who can hit the
+    // endpoint. Tighten before public beta.
+    let post = repos
+        .posts
+        .find_by_id(&post_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Post not found".into()))?;
+    Ok(Json(json!({ "post": post })))
+}
+
+pub async fn publish_post(
+    State(repos): State<Repos>,
+    AuthUser(claims): AuthUser,
+    Path(post_id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let post = repos
+        .posts
+        .find_by_id(&post_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Post not found".into()))?;
+
+    let author_key = post.author.key().to_string();
+    if author_key != claims.sub {
+        return Err(AppError::Forbidden("Only the author can publish".into()));
+    }
+    if post.published {
+        return Err(AppError::BadRequest("Post already published".into()));
+    }
+
+    // Freeze the Y.Doc by extracting its current plain-text content and
+    // persisting it as immutable `published_content`. The CRDT state stays
+    // around in case we want to support post-publish edits later.
+    let doc = CollabDoc::from_snapshot(&post.state_b64)?;
+    let content = doc.text();
+
+    let updated = repos.posts.publish(&post_id, content).await?;
+    Ok(Json(json!({ "post": updated })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::jwt::Claims;
+    use crate::models::post::Post;
+    use crate::repositories::{
+        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
+        server::MockServerRepo, social::MockSocialRepo, user::MockUserRepo,
+    };
+    use mockall::predicate::eq;
+    use std::sync::Arc;
+
+    fn claims(user_id: &str) -> Claims {
+        Claims {
+            sub: user_id.into(),
+            token_type: "access".into(),
+            iat: 0,
+            exp: usize::MAX / 2,
+        }
+    }
+
+    fn post(id: &str, author: &str, published: bool) -> Post {
+        Post {
+            id: Some(surrealdb::RecordId::from(("post", id))),
+            author: surrealdb::RecordId::from(("user", author)),
+            title: "draft".into(),
+            state_b64: String::new(),
+            state_vector_b64: String::new(),
+            published,
+            published_content: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+
+    fn repos(posts: MockPostRepo) -> Repos {
+        Repos {
+            users: Arc::new(MockUserRepo::new()),
+            servers: Arc::new(MockServerRepo::new()),
+            channels: Arc::new(MockChannelRepo::new()),
+            messages: Arc::new(MockMessageRepo::new()),
+            social: Arc::new(MockSocialRepo::new()),
+            posts: Arc::new(posts),
+        }
+    }
+
+    #[tokio::test]
+    async fn create_draft_rejects_empty_title() {
+        let result = create_draft(
+            State(repos(MockPostRepo::new())),
+            AuthUser(claims("u1")),
+            Json(CreateDraftInput { title: "   ".into() }),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn create_draft_rejects_oversize_title() {
+        let result = create_draft(
+            State(repos(MockPostRepo::new())),
+            AuthUser(claims("u1")),
+            Json(CreateDraftInput { title: "x".repeat(201) }),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn create_draft_persists_via_repo() {
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_create_draft()
+            .with(eq("u1"), eq("My first post".to_string()))
+            .returning(|_, _| Ok(post("p1", "u1", false)));
+
+        let response = create_draft(
+            State(repos(posts)),
+            AuthUser(claims("u1")),
+            Json(CreateDraftInput { title: "My first post".into() }),
+        )
+        .await
+        .expect("handler should succeed");
+
+        assert!(response.0.get("post").is_some());
+    }
+
+    #[tokio::test]
+    async fn publish_forbidden_for_non_author() {
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_find_by_id()
+            .returning(|_| Ok(Some(post("p1", "author", false))));
+
+        let result = publish_post(
+            State(repos(posts)),
+            AuthUser(claims("not-author")),
+            Path("p1".into()),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn publish_rejects_already_published() {
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_find_by_id()
+            .returning(|_| Ok(Some(post("p1", "u1", true))));
+
+        let result = publish_post(
+            State(repos(posts)),
+            AuthUser(claims("u1")),
+            Path("p1".into()),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
+    }
+
+    #[tokio::test]
+    async fn publish_freezes_empty_content_on_empty_doc() {
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_find_by_id()
+            .returning(|_| Ok(Some(post("p1", "u1", false))));
+        posts
+            .expect_publish()
+            .with(eq("p1"), eq(String::new()))
+            .returning(|_, _| Ok(post("p1", "u1", true)));
+
+        let response = publish_post(
+            State(repos(posts)),
+            AuthUser(claims("u1")),
+            Path("p1".into()),
+        )
+        .await
+        .expect("handler should succeed");
+
+        let published = response.0["post"]["published"].as_bool();
+        assert_eq!(published, Some(true));
+    }
+}

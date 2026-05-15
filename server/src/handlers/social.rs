@@ -145,8 +145,8 @@ mod tests {
     use crate::auth::jwt::Claims;
     use crate::models::user::{User, UserStatus};
     use crate::repositories::{
-        channel::MockChannelRepo, message::MockMessageRepo, server::MockServerRepo,
-        social::MockSocialRepo, user::MockUserRepo,
+        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
+        server::MockServerRepo, social::MockSocialRepo, user::MockUserRepo,
     };
     use mockall::predicate::eq;
     use pretty_assertions::assert_eq;
@@ -179,6 +179,7 @@ mod tests {
             channels: Arc::new(MockChannelRepo::new()),
             messages: Arc::new(MockMessageRepo::new()),
             social: Arc::new(social),
+            posts: Arc::new(MockPostRepo::new()),
         }
     }
 

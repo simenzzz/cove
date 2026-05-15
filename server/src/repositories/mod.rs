@@ -1,5 +1,6 @@
 pub mod channel;
 pub mod message;
+pub mod post;
 pub mod server;
 pub mod social;
 pub mod user;
@@ -16,6 +17,7 @@ pub struct Repos {
     pub channels: Arc<dyn channel::ChannelRepo>,
     pub messages: Arc<dyn message::MessageRepo>,
     pub social: Arc<dyn social::SocialRepo>,
+    pub posts: Arc<dyn post::PostRepo>,
 }
 
 impl Repos {
@@ -25,7 +27,8 @@ impl Repos {
             servers: Arc::new(server::SurrealServerRepo::new(db.clone())),
             channels: Arc::new(channel::SurrealChannelRepo::new(db.clone())),
             messages: Arc::new(message::SurrealMessageRepo::new(db.clone())),
-            social: Arc::new(social::SurrealSocialRepo::new(db)),
+            social: Arc::new(social::SurrealSocialRepo::new(db.clone())),
+            posts: Arc::new(post::SurrealPostRepo::new(db)),
         }
     }
 }
