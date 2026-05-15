@@ -1,8 +1,11 @@
 import { browser } from '$app/environment';
+import { api } from '$lib/api/client';
+import { getLastSeqPerChannel } from '$stores/chat';
 
 const WS_URL = import.meta.env.PUBLIC_WS_URL ?? 'ws://localhost:3001/ws';
 
 export interface WsMessage {
+  v: number;
   type: string;
   [key: string]: unknown;
 }
@@ -14,30 +17,86 @@ class WebSocketClient {
   private handlers: Map<string, MessageHandler[]> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectDelay = 30_000;
-  private token: string | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private shouldReconnect = false;
+  private hasConnectedBefore = false;
 
-  connect(token: string): void {
+  async connect(): Promise<void> {
     if (!browser) return;
+    // Guard against stacking concurrent connections
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)
+    ) {
+      return;
+    }
+    this.shouldReconnect = true;
 
-    this.token = token;
-    this.ws = new WebSocket(`${WS_URL}?token=${token}`);
+    try {
+      const { ticket } = await api.post<{ ticket: string }>('/api/auth/ws-ticket');
+      this.doConnect(ticket);
+    } catch (err) {
+      console.error('Failed to get WS ticket:', err);
+      this.scheduleReconnect();
+    }
+  }
+
+  private doConnect(ticket: string): void {
+    this.ws = new WebSocket(`${WS_URL}?ticket=${ticket}`);
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       console.log('WebSocket connected');
+
+      // On reconnect, send resume with last known seq per channel
+      if (this.hasConnectedBefore) {
+        const lastSeq = getLastSeqPerChannel();
+        if (Object.keys(lastSeq).length > 0) {
+          this.send({
+            v: 1,
+            type: 'resume',
+            last_seq: lastSeq,
+          });
+        }
+      }
+      this.hasConnectedBefore = true;
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
-      const message: WsMessage = JSON.parse(event.data as string);
+      let message: WsMessage;
+      try {
+        message = JSON.parse(event.data as string);
+      } catch {
+        console.error('Failed to parse WS message:', event.data);
+        return;
+      }
+
+      if (message.type === 'auth_ok') {
+        this.startHeartbeat(message.heartbeat_interval as number);
+        return;
+      }
+
+      if (message.type === 'heartbeat_ack') {
+        return;
+      }
+
       const handlers = this.handlers.get(message.type) ?? [];
       for (const handler of handlers) {
+        handler(message);
+      }
+      // Also call wildcard handlers
+      const wildcardHandlers = this.handlers.get('*') ?? [];
+      for (const handler of wildcardHandlers) {
         handler(message);
       }
     };
 
     this.ws.onclose = () => {
       console.log('WebSocket disconnected');
-      this.scheduleReconnect();
+      this.stopHeartbeat();
+      if (this.shouldReconnect) {
+        this.scheduleReconnect();
+      }
     };
 
     this.ws.onerror = () => {
@@ -45,9 +104,23 @@ class WebSocketClient {
     };
   }
 
-  private scheduleReconnect(): void {
-    if (!this.token) return;
+  private startHeartbeat(intervalMs: number): void {
+    this.stopHeartbeat();
+    const interval = intervalMs && intervalMs > 0 ? intervalMs : 30000;
+    this.heartbeatInterval = setInterval(() => {
+      this.send({ v: 1, type: 'heartbeat' });
+    }, interval);
+  }
 
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (!this.shouldReconnect) return;
     const delay = Math.min(
       1000 * Math.pow(2, this.reconnectAttempts),
       this.maxReconnectDelay,
@@ -55,7 +128,7 @@ class WebSocketClient {
     this.reconnectAttempts++;
     console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     setTimeout(() => {
-      if (this.token) this.connect(this.token);
+      this.connect();
     }, delay);
   }
 
@@ -79,7 +152,8 @@ class WebSocketClient {
   }
 
   disconnect(): void {
-    this.token = null;
+    this.shouldReconnect = false;
+    this.stopHeartbeat();
     this.ws?.close();
     this.ws = null;
   }
