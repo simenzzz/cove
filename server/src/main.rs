@@ -34,6 +34,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use ws::room_manager::RoomManager;
 use ws::user_connections::UserConnectionRegistry;
+use ws::watch_room_manager::WatchRoomManager;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -42,6 +43,7 @@ pub struct AppState {
     pub redis: Pool,
     pub repos: Repos,
     pub room_manager: RoomManager,
+    pub watch_manager: WatchRoomManager,
     pub user_connections: UserConnectionRegistry,
     pub collab: CollabManager,
     pub metrics_handle: metrics_exporter_prometheus::PrometheusHandle,
@@ -91,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repos = Repos::new(db.clone());
     let room_manager = RoomManager::new();
+    let watch_manager = WatchRoomManager::new(repos.watch.clone());
     let user_connections = UserConnectionRegistry::new();
 
     // Wire one ResourceStore per CRDT-backed resource kind. The manager
@@ -121,6 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         redis: redis_pool,
         repos,
         room_manager,
+        watch_manager,
         user_connections,
         collab,
         metrics_handle: prometheus_handle,

@@ -60,6 +60,18 @@ pub enum ClientMessage {
         whiteboard_id: String,
         state: serde_json::Value,
     },
+    // ── Phase 4: watch-together rooms ──
+    WatchSubscribe {
+        channel_id: String,
+    },
+    WatchUnsubscribe {
+        channel_id: String,
+    },
+    /// Leader-only. Hand off leadership to another currently-connected member.
+    WatchTransferLeader {
+        channel_id: String,
+        to_user_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,6 +177,43 @@ pub enum ServerMessage {
     /// restore). Clients should re-subscribe to fetch fresh state.
     WhiteboardClosed {
         whiteboard_id: String,
+        reason: String,
+    },
+    // ── Phase 4: watch-together rooms ──
+    /// Full room snapshot — sent on subscribe and after viewer/leader/queue
+    /// transitions so clients can re-hydrate without a separate REST call.
+    /// `playback`, `queue`, and `viewers` are passed as opaque JSON values so
+    /// the actor can shape them without bloating the protocol enum surface.
+    WatchState {
+        channel_id: String,
+        leader_id: Option<String>,
+        playback: serde_json::Value,
+        queue: serde_json::Value,
+        viewers: serde_json::Value,
+    },
+    /// Periodic authoritative playback heartbeat (5s while not paused) so
+    /// followers can correct drift without waiting for a transition.
+    WatchSyncPulse {
+        channel_id: String,
+        position_ms: i64,
+        server_ts: u64,
+        paused: bool,
+    },
+    WatchLeaderChanged {
+        channel_id: String,
+        leader_id: String,
+        /// "transfer" | "disconnect"
+        reason: String,
+    },
+    WatchError {
+        channel_id: String,
+        code: String,
+        message: String,
+    },
+    /// Sent when the channel is deleted or the server forcibly tears the
+    /// session down. Clients should drop their local state.
+    WatchClosed {
+        channel_id: String,
         reason: String,
     },
 }

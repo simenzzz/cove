@@ -25,6 +25,7 @@ use crate::ws::protocol::{ClientMessage, ServerMessage, SubscriptionLevel};
 use crate::ws::replay;
 use crate::ws::room::RoomCommand;
 use crate::ws::sequence;
+use crate::ws::watch_types::WatchCommand;
 use crate::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -128,6 +129,7 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
     // Track subscriptions
     let mut subscriptions: HashMap<String, SubscriptionLevel> = HashMap::new();
     let mut collab_subscriptions: HashSet<ResourceRef> = HashSet::new();
+    let mut watch_subscriptions: HashSet<String> = HashSet::new();
     let mut last_typing: HashMap<String, std::time::Instant> = HashMap::new();
 
     let heartbeat_timeout = std::time::Duration::from_secs(60);
@@ -573,6 +575,62 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
                         }
                         state.collab.update_awareness(&r, &user_id, aw_state).await;
                     }
+                    // ── Phase 4: watch-together rooms ──
+                    ClientMessage::WatchSubscribe { channel_id } => {
+                        // Defense in depth: verify the channel is actually a
+                        // Watch channel AND the user is a server member. The
+                        // frontend routes by type, but never trust the client.
+                        if !check_watch_channel_access(&state, &channel_id, &user_id).await {
+                            let _ = out_tx
+                                .send(
+                                    ServerMessage::WatchError {
+                                        channel_id: channel_id.clone(),
+                                        code: "forbidden".into(),
+                                        message: "Not a watch channel or not a member".into(),
+                                    }
+                                    .to_json(),
+                                )
+                                .await;
+                            continue;
+                        }
+                        let room = state.watch_manager.get_or_create(&channel_id).await;
+                        let _ = room
+                            .send(WatchCommand::Join {
+                                user_id: user_id.clone(),
+                                username: username.clone(),
+                                sender: out_tx.clone(),
+                            })
+                            .await;
+                        watch_subscriptions.insert(channel_id);
+                    }
+                    ClientMessage::WatchUnsubscribe { channel_id } => {
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::Leave {
+                                    user_id: user_id.clone(),
+                                })
+                                .await;
+                        }
+                        watch_subscriptions.remove(&channel_id);
+                    }
+                    ClientMessage::WatchTransferLeader {
+                        channel_id,
+                        to_user_id,
+                    } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::TransferLeader {
+                                    from_user: user_id.clone(),
+                                    to_user: to_user_id,
+                                    reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -616,6 +674,18 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
         state.collab.unsubscribe(r, &user_id).await;
     }
 
+    // Same for watch rooms: drop the actor's reference so it can leader-handoff
+    // and eventually grace-period-evict if the room is now empty.
+    for channel_id in &watch_subscriptions {
+        if let Some(room) = state.watch_manager.get_room(channel_id).await {
+            let _ = room
+                .send(WatchCommand::Leave {
+                    user_id: user_id.clone(),
+                })
+                .await;
+        }
+    }
+
     drop(out_tx);
     let _ = writer_handle.await;
     tracing::info!(%user_id, "WebSocket client disconnected");
@@ -640,6 +710,43 @@ async fn check_channel_access(state: &AppState, channel_id: &str, user_id: &str)
         Ok(Some(ch)) => ch,
         _ => return false,
     };
+    let server_key = channel.server.key().to_string();
+    state
+        .repos
+        .servers
+        .is_member(&server_key, user_id)
+        .await
+        .unwrap_or(false)
+}
+
+/// Symmetric "not subscribed" surface for the watch protocol — every
+/// mutating arm uses this so clients can distinguish "I dropped the message"
+/// from "the server silently ignored me." Tracing-only on the server side.
+async fn send_watch_not_subscribed(out_tx: &mpsc::Sender<String>, channel_id: &str) {
+    let _ = out_tx
+        .send(
+            ServerMessage::WatchError {
+                channel_id: channel_id.to_string(),
+                code: "not_subscribed".into(),
+                message: "Not subscribed to this watch room".into(),
+            }
+            .to_json(),
+        )
+        .await;
+}
+
+/// Watch-channel-specific access check: in addition to the membership rule,
+/// the channel must be `ChannelType::Watch`. Defends against a client trying
+/// to multiplex watch protocol commands onto an unrelated channel id.
+async fn check_watch_channel_access(state: &AppState, channel_id: &str, user_id: &str) -> bool {
+    use crate::models::channel::ChannelType;
+    let channel = match state.repos.channels.find_by_id(channel_id).await {
+        Ok(Some(ch)) => ch,
+        _ => return false,
+    };
+    if channel.channel_type != ChannelType::Watch {
+        return false;
+    }
     let server_key = channel.server.key().to_string();
     state
         .repos

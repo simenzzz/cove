@@ -6,3 +6,6 @@ pub mod room;
 pub mod room_manager;
 pub mod sequence;
 pub mod user_connections;
+pub mod watch_room;
+pub mod watch_room_manager;
+pub mod watch_types;
