@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { createYouTubePlayer, type YouTubePlayer } from '$lib/watch/youtube-player';
   import { createSyncController, type SyncController } from '$lib/watch/sync-controller';
-  import { sendPlayback, type WatchPlayback } from '$stores/watch';
+  import { sendPlayback, sendProgress, type WatchPlayback } from '$stores/watch';
 
   let {
     channelId,
@@ -14,6 +14,9 @@
   let player: YouTubePlayer | null = null;
   let sync: SyncController | null = null;
   let lastApplyKey = '';
+  /// Periodic progress reporter — leader only. Owns its own interval so we
+  /// don't interleave it with the apply/reconcile effects.
+  let progressInterval: ReturnType<typeof setInterval> | null = null;
 
   // Apply transitions whenever the authoritative playback changes. Use a
   // string key (action + ts + video) so we don't re-apply identical updates
@@ -53,11 +56,37 @@
         case 'seek':
           sendPlayback(channelId, 'seek', e.position_ms);
           break;
+        case 'ended':
+          // Nudge the server with a final progress at full duration so it
+          // detects completion + auto-advances even when YouTube's `ended`
+          // arrives before our next interval tick.
+          sendProgress(channelId, player!.getDuration());
+          break;
       }
     });
   });
 
+  // Re-arm the leader progress reporter whenever leadership changes. The 5s
+  // cadence matches the server's sync pulse interval — frequent enough that
+  // completion detection fires within seconds of the threshold, cheap enough
+  // that there's no rate-limit pressure.
+  $effect(() => {
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      progressInterval = null;
+    }
+    if (!isLeader) return;
+    progressInterval = setInterval(() => {
+      if (!player) return;
+      sendProgress(channelId, player.getPosition());
+    }, 5_000);
+  });
+
   onDestroy(() => {
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      progressInterval = null;
+    }
     sync?.stop();
     player?.destroy();
     player = null;

@@ -213,6 +213,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/api/channels/{channel_id}/whiteboard/checkpoints/{checkpoint_id}/restore",
             post(handlers::whiteboards::restore_checkpoint),
         )
+        // Watch-together routes (Phase 4 — synchronized media + recs)
+        .route(
+            "/api/channels/{channel_id}/watch/recommendations",
+            get(handlers::watch::get_recommendations),
+        )
         .layer(from_fn(
             middleware::request_id::request_id_middleware,
         ))

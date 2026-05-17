@@ -77,6 +77,14 @@ pub enum WatchCommand {
         username: String,
         emoji: String,
     },
+    /// Leader-only progress heartbeat. Used by the server to:
+    ///   (a) detect when the current video crosses the watch-completion
+    ///       threshold (>=90% of duration) and record `watched` edges, and
+    ///   (b) auto-advance when the leader's player has reached `duration_ms`.
+    Progress {
+        from_user: String,
+        position_ms: i64,
+    },
     /// Generic fan-out for messages composed outside the actor (REST handlers,
     /// admin events). Routed to every subscriber except `exclude_user`.
     Broadcast {

@@ -107,6 +107,13 @@ pub enum ClientMessage {
         channel_id: String,
         emoji: String,
     },
+    /// Leader-only. Report the current playback position so the server can
+    /// detect when a video ends naturally (>=90% or end-of-stream) and the
+    /// `watched` edge should be written. Sent every few seconds.
+    WatchProgress {
+        channel_id: String,
+        position_ms: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

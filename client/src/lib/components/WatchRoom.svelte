@@ -2,6 +2,7 @@
   import ReactionOverlay from './ReactionOverlay.svelte';
   import WatchPlayer from './WatchPlayer.svelte';
   import WatchQueue from './WatchQueue.svelte';
+  import WatchRecommendations from './WatchRecommendations.svelte';
   import WatchViewers from './WatchViewers.svelte';
   import type { WatchRoomState } from '$stores/watch';
 
@@ -40,13 +41,16 @@
       <div class="error-banner">{state.error}</div>
     {/if}
   </main>
-  <WatchQueue
-    channelId={state.channel_id}
-    queue={state.queue}
-    {currentUserId}
-    {isLeader}
-    hasCurrentVideo={hasVideo}
-  />
+  <div class="side-pane">
+    <WatchQueue
+      channelId={state.channel_id}
+      queue={state.queue}
+      {currentUserId}
+      {isLeader}
+      hasCurrentVideo={hasVideo}
+    />
+    <WatchRecommendations channelId={state.channel_id} />
+  </div>
   <WatchViewers
     channelId={state.channel_id}
     viewers={state.viewers}
@@ -75,6 +79,11 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+  .side-pane {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
   }
   .empty {
     flex: 1;

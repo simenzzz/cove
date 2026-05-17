@@ -820,6 +820,43 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
                                 .await;
                         }
                     }
+                    ClientMessage::WatchProgress {
+                        channel_id,
+                        position_ms,
+                    } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        // Defense-in-depth cap on the progress stream. The
+                        // leader's client emits ~once every 5s; a hostile or
+                        // bugged leader spamming faster would still be
+                        // bounded by the actor's `current_recorded` one-shot
+                        // gate, but rate-limiting also protects the per-op
+                        // `Progress` mailbox slot from saturation.
+                        let rate_key = watch_playback_control_key(&user_id, &channel_id);
+                        if check_rate_limit(
+                            &state.redis,
+                            &RateLimitConfig {
+                                key_prefix: rate_key,
+                                limit: 10,
+                                window_secs: 1,
+                            },
+                        )
+                        .await
+                        .is_err()
+                        {
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::Progress {
+                                    from_user: user_id.clone(),
+                                    position_ms,
+                                })
+                                .await;
+                        }
+                    }
                 }
             }
             Message::Close(_) => break,

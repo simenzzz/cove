@@ -26,9 +26,15 @@ struct WatchRoomState {
     playback: PlaybackSummary,
     queue: Vec<QueueItemSummary>,
     /// The id of the queue item currently playing (kept out of `queue` while
-    /// it plays). `None` when nothing is playing. Populated by later commits
-    /// when the queue + playback arms land.
+    /// it plays). `None` when nothing is playing.
     current_item_id: Option<String>,
+    /// Duration of the current item, used for the >=90% completion gate.
+    /// 0 means "unknown" — completion detection is skipped in that case.
+    current_duration_ms: i64,
+    /// Marks whether `record_watched` has fired for the current item this
+    /// session. Reset on advance. Prevents duplicate edge writes from a
+    /// chatty progress stream.
+    current_recorded: bool,
 }
 
 impl WatchRoomState {
@@ -46,6 +52,8 @@ impl WatchRoomState {
             },
             queue: Vec::new(),
             current_item_id: None,
+            current_duration_ms: 0,
+            current_recorded: false,
         }
     }
 
@@ -144,6 +152,7 @@ pub fn spawn_watch_room(
                     if let Some(pos) = state.queue.iter().position(|q| q.id == current_id) {
                         let item = state.queue.remove(pos);
                         state.playback.video_id = Some(item.video_id);
+                        state.current_duration_ms = item.duration_ms;
                         state.playback.position_ms = room.playback_position_ms;
                         state.playback.paused = true; // Restart from paused — leader resumes.
                         state.playback.server_ts = now_ms();
@@ -528,6 +537,60 @@ async fn handle_command(
             advance_queue(state, watch_repo).await;
             broadcast_advance(state);
         }
+        WatchCommand::Progress { from_user, position_ms } => {
+            // Leader-only — followers can't drive completion detection
+            // because their playback may lag arbitrarily.
+            if state.leader_id.as_deref() != Some(from_user.as_str()) {
+                return;
+            }
+            let video_id = match state.playback.video_id.clone() {
+                Some(v) => v,
+                None => return,
+            };
+            let clamped = position_ms.max(0);
+            // Keep our authoritative position fresh so a follower joining
+            // between sync pulses gets accurate hydration.
+            state.playback.position_ms = clamped;
+            state.playback.server_ts = now_ms();
+
+            // Completion gate: >=90% of a known duration, recorded once per
+            // current item.
+            if !state.current_recorded
+                && state.current_duration_ms > 0
+                && clamped * 10 >= state.current_duration_ms * 9
+            {
+                state.current_recorded = true;
+                let completion = (clamped as f64 / state.current_duration_ms as f64).min(1.0);
+                // Record a `watched` edge for every viewer currently in the
+                // room. A single detached task walks the viewer list
+                // sequentially so a large room can't fan out into N
+                // concurrent DB writes per video completion (saturating the
+                // Surreal connection pool). Errors are logged but not
+                // surfaced — this is best-effort engagement data.
+                let viewers: Vec<String> = state.subscribers.keys().cloned().collect();
+                let repo = watch_repo.clone();
+                let vid = video_id.clone();
+                tokio::spawn(async move {
+                    for user in viewers {
+                        if let Err(e) = repo.record_watched(&user, &vid, completion).await {
+                            tracing::warn!(
+                                user_id = %user,
+                                video_id = %vid,
+                                error = %e,
+                                "failed to record watched edge"
+                            );
+                        }
+                    }
+                });
+            }
+
+            // Auto-advance: leader reports position past the end. Saves the
+            // leader from clicking Skip when a video naturally ends.
+            if state.current_duration_ms > 0 && clamped >= state.current_duration_ms {
+                advance_queue(state, watch_repo).await;
+                broadcast_advance(state);
+            }
+        }
         WatchCommand::Reaction { from_user, username, emoji } => {
             // Reactions echo to everyone including the sender so all clients
             // render identically. Skip silently if the user somehow isn't a
@@ -563,6 +626,8 @@ fn promote_to_current(state: &mut WatchRoomState, item: QueueItemSummary) {
     state.playback.paused = false;
     state.playback.server_ts = now_ms();
     state.current_item_id = Some(item.id);
+    state.current_duration_ms = item.duration_ms;
+    state.current_recorded = false;
 }
 
 /// Move the head of the queue (highest score, oldest tie-breaker) into
@@ -580,6 +645,8 @@ async fn advance_queue(state: &mut WatchRoomState, watch_repo: &Arc<dyn WatchRep
         state.playback.paused = true;
         state.playback.server_ts = now_ms();
         state.current_item_id = None;
+        state.current_duration_ms = 0;
+        state.current_recorded = false;
     } else {
         let next = state.queue.remove(0);
         promote_to_current(state, next);

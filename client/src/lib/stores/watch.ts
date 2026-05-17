@@ -1,5 +1,23 @@
 import { writable, derived } from 'svelte/store';
+import { api } from '$lib/api/client';
 import { wsClient, type WsMessage } from '$lib/ws/client';
+
+export interface WatchRecommendation {
+  video_id: string;
+  score: number;
+}
+
+/// Fetch the graph-based "what your server-mates are watching" list for the
+/// current user. Bounded by the REST handler's clamp; pass a small limit.
+export async function fetchRecommendations(
+  channelId: string,
+  limit = 10,
+): Promise<WatchRecommendation[]> {
+  const data = await api.get<{ recommendations: WatchRecommendation[] }>(
+    `/api/channels/${channelId}/watch/recommendations?limit=${limit}`,
+  );
+  return data.recommendations ?? [];
+}
 
 export interface WatchViewer {
   user_id: string;
@@ -363,6 +381,18 @@ export function sendReaction(channelId: string, emoji: string): void {
     type: 'watch_reaction',
     channel_id: channelId,
     emoji,
+  });
+}
+
+/// Leader-only. Periodically reported to the server so it can detect
+/// completion (>=90% of duration) and auto-advance at end-of-stream.
+/// No-ops for followers — the server validates leadership.
+export function sendProgress(channelId: string, positionMs: number): void {
+  wsClient.send({
+    v: 1,
+    type: 'watch_progress',
+    channel_id: channelId,
+    position_ms: Math.max(0, Math.round(positionMs)),
   });
 }
 
