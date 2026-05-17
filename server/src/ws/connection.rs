@@ -12,7 +12,8 @@ use crate::collab::resource::ResourceRef;
 use crate::collab::CollabManager;
 use crate::middleware::rate_limit::{
     check_rate_limit, collab_subscribe_key, message_send_key, watch_playback_control_key,
-    whiteboard_awareness_key, whiteboard_subscribe_key, whiteboard_update_key, RateLimitConfig,
+    watch_queue_op_key, watch_reaction_key, whiteboard_awareness_key,
+    whiteboard_subscribe_key, whiteboard_update_key, RateLimitConfig,
 };
 
 /// Cap on the serialized JSON size of an awareness blob. The blob is held in
@@ -621,6 +622,13 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
                             send_watch_not_subscribed(&out_tx, &channel_id).await;
                             continue;
                         }
+                        // Transfer broadcasts to every viewer, so a leader
+                        // ping-ponging leadership is a fan-out amplifier. Reuse
+                        // the queue-op bucket — it's already keyed per user
+                        // per room and gives 10/min, plenty for legitimate use.
+                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
+                            continue;
+                        }
                         if let Some(room) = state.watch_manager.get_room(&channel_id).await {
                             let _ = room
                                 .send(WatchCommand::TransferLeader {
@@ -675,6 +683,139 @@ async fn handle_socket(socket: WebSocket, state: AppState, ticket: String) {
                                     action,
                                     position_ms,
                                     reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
+                    }
+                    ClientMessage::WatchQueueAdd {
+                        channel_id,
+                        video_id,
+                        title,
+                        duration_ms,
+                        thumbnail_url,
+                        nonce,
+                    } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::QueueAdd {
+                                    from_user: user_id.clone(),
+                                    video_id,
+                                    title,
+                                    duration_ms,
+                                    thumbnail_url,
+                                    nonce,
+                                    reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
+                    }
+                    ClientMessage::WatchQueueRemove { channel_id, item_id } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::QueueRemove {
+                                    from_user: user_id.clone(),
+                                    item_id,
+                                    reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
+                    }
+                    ClientMessage::WatchVote {
+                        channel_id,
+                        item_id,
+                        value,
+                    } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::Vote {
+                                    from_user: user_id.clone(),
+                                    item_id,
+                                    value,
+                                    reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
+                    }
+                    ClientMessage::WatchSkip { channel_id } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::Skip {
+                                    from_user: user_id.clone(),
+                                    reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
+                    }
+                    ClientMessage::WatchReaction { channel_id, emoji } => {
+                        if !watch_subscriptions.contains(&channel_id) {
+                            send_watch_not_subscribed(&out_tx, &channel_id).await;
+                            continue;
+                        }
+                        // Reject empty or oversized payloads — emojis can be
+                        // multi-codepoint (e.g. flag sequences) so we allow
+                        // up to 32 bytes, plenty for any single emoji.
+                        let trimmed = emoji.trim();
+                        if trimmed.is_empty() || trimmed.len() > 32 {
+                            continue;
+                        }
+                        let rate_key = watch_reaction_key(&user_id, &channel_id);
+                        if check_rate_limit(
+                            &state.redis,
+                            &RateLimitConfig {
+                                key_prefix: rate_key,
+                                limit: 5,
+                                window_secs: 1,
+                            },
+                        )
+                        .await
+                        .is_err()
+                        {
+                            let _ = out_tx
+                                .send(
+                                    ServerMessage::WatchError {
+                                        channel_id,
+                                        code: "rate_limited".into(),
+                                        message: "Reaction rate limited".into(),
+                                    }
+                                    .to_json(),
+                                )
+                                .await;
+                            continue;
+                        }
+                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(WatchCommand::Reaction {
+                                    from_user: user_id.clone(),
+                                    username: username.clone(),
+                                    emoji: trimmed.to_string(),
                                 })
                                 .await;
                         }
@@ -781,6 +922,44 @@ async fn send_watch_not_subscribed(out_tx: &mpsc::Sender<String>, channel_id: &s
             .to_json(),
         )
         .await;
+}
+
+/// Apply the per-user-per-room queue-op rate limit. On rejection, surfaces a
+/// `watch_error{code:"rate_limited"}` so the optimistic client can roll its
+/// pending entry back. Returns `true` if the caller may proceed.
+async fn check_watch_queue_rate(
+    state: &AppState,
+    user_id: &str,
+    channel_id: &str,
+    out_tx: &mpsc::Sender<String>,
+) -> bool {
+    let key = watch_queue_op_key(user_id, channel_id);
+    if check_rate_limit(
+        &state.redis,
+        &RateLimitConfig {
+            key_prefix: key,
+            // 10 ops per minute is tight, matches the plan. Queue adds and
+            // votes are user-initiated and don't justify higher.
+            limit: 10,
+            window_secs: 60,
+        },
+    )
+    .await
+    .is_err()
+    {
+        let _ = out_tx
+            .send(
+                ServerMessage::WatchError {
+                    channel_id: channel_id.to_string(),
+                    code: "rate_limited".into(),
+                    message: "Queue operation rate limited".into(),
+                }
+                .to_json(),
+            )
+            .await;
+        return false;
+    }
+    true
 }
 
 /// Watch-channel-specific access check: in addition to the membership rule,

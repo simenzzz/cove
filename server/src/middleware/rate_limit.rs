@@ -106,3 +106,15 @@ pub fn collab_subscribe_key(user_id: &str) -> String {
 pub fn watch_playback_control_key(user_id: &str, channel_id: &str) -> String {
     format!("rate:watch:pb:{user_id}:{channel_id}")
 }
+
+/// Queue mutation ops (add/remove/vote/skip). Tight enough to thwart abuse
+/// but loose enough that genuine voting flurries pass.
+pub fn watch_queue_op_key(user_id: &str, channel_id: &str) -> String {
+    format!("rate:watch:q:{user_id}:{channel_id}")
+}
+
+/// Live reactions — capped low because each reaction is broadcast to every
+/// other viewer (fan-out amplification).
+pub fn watch_reaction_key(user_id: &str, channel_id: &str) -> String {
+    format!("rate:watch:rx:{user_id}:{channel_id}")
+}

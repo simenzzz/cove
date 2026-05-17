@@ -1,5 +1,7 @@
 <script lang="ts">
+  import ReactionOverlay from './ReactionOverlay.svelte';
   import WatchPlayer from './WatchPlayer.svelte';
+  import WatchQueue from './WatchQueue.svelte';
   import WatchViewers from './WatchViewers.svelte';
   import type { WatchRoomState } from '$stores/watch';
 
@@ -14,24 +16,37 @@
 
 <div class="watch-room">
   <main class="player-pane">
-    {#if hasVideo}
-      <WatchPlayer
+    <div class="player-stack">
+      {#if hasVideo}
+        <WatchPlayer
+          channelId={state.channel_id}
+          playback={state.playback}
+          {isLeader}
+        />
+      {:else}
+        <div class="empty">
+          <p class="text-gray-400">No video playing.</p>
+          <p class="text-sm text-gray-500 mt-2">
+            Add a YouTube URL to the queue to get started.
+          </p>
+        </div>
+      {/if}
+      <ReactionOverlay
         channelId={state.channel_id}
-        playback={state.playback}
-        {isLeader}
+        reactions={state.reactions}
       />
-    {:else}
-      <div class="empty">
-        <p class="text-gray-400">No video playing.</p>
-        <p class="text-sm text-gray-500 mt-2">
-          Queue support lands in the next commit.
-        </p>
-      </div>
-    {/if}
+    </div>
     {#if state.error}
       <div class="error-banner">{state.error}</div>
     {/if}
   </main>
+  <WatchQueue
+    channelId={state.channel_id}
+    queue={state.queue}
+    {currentUserId}
+    {isLeader}
+    hasCurrentVideo={hasVideo}
+  />
   <WatchViewers
     channelId={state.channel_id}
     viewers={state.viewers}
@@ -53,6 +68,13 @@
     min-width: 0;
     padding: 1rem;
     gap: 1rem;
+  }
+  .player-stack {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
   .empty {
     flex: 1;

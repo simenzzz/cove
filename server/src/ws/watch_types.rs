@@ -40,6 +40,43 @@ pub enum WatchCommand {
         position_ms: i64,
         reply_to: mpsc::Sender<String>,
     },
+    /// Append to the queue. Anyone in the room can add. `nonce` echoes back
+    /// in the ack so the client can flip its optimistic entry to confirmed.
+    QueueAdd {
+        from_user: String,
+        video_id: String,
+        title: String,
+        duration_ms: i64,
+        thumbnail_url: Option<String>,
+        nonce: String,
+        reply_to: mpsc::Sender<String>,
+    },
+    /// Remove a queue item. Permitted for the original adder OR the leader.
+    QueueRemove {
+        from_user: String,
+        item_id: String,
+        reply_to: mpsc::Sender<String>,
+    },
+    /// Cast / change / clear this user's vote on a queue item.
+    /// `value` must be -1, 0, or 1; 0 removes any prior vote.
+    Vote {
+        from_user: String,
+        item_id: String,
+        value: i32,
+        reply_to: mpsc::Sender<String>,
+    },
+    /// Leader-only. Advance to the next queue item (or stop if empty).
+    Skip {
+        from_user: String,
+        reply_to: mpsc::Sender<String>,
+    },
+    /// Fire-and-forget floating emoji broadcast. Validated and rate-limited
+    /// at the connection boundary; the actor just fans out.
+    Reaction {
+        from_user: String,
+        username: String,
+        emoji: String,
+    },
     /// Generic fan-out for messages composed outside the actor (REST handlers,
     /// admin events). Routed to every subscriber except `exclude_user`.
     Broadcast {

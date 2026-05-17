@@ -116,16 +116,52 @@ pub fn spawn_watch_room(
         let mut state = WatchRoomState::new(channel_id.clone());
         tracing::info!(channel = %channel_id, "Watch room actor started");
 
-        // Hydrate from DB so a restarted server reloads queue + last playback
-        // (queue/current_item hydration lands in a later commit alongside the
-        // queue command arms; for now just ensure the row exists).
+        // Hydrate from DB so a restarted server reloads queue + last playback.
+        // Errors are surfaced explicitly (rather than swallowed via `if let
+        // Ok`) so a transient DB blip doesn't silently strand the actor with
+        // an empty queue while disk still has rows.
         if let Err(e) = watch_repo.ensure_room(&channel_id).await {
             tracing::warn!(channel = %channel_id, error = %e, "Failed to ensure watch_room row");
         }
-        if let Ok(Some(room)) = watch_repo.find_room(&channel_id).await {
-            // Pull the persisted leader so a reconnect mid-session restores
-            // it; queue + current_item hydration is deferred.
-            state.leader_id = room.leader.as_ref().map(|r| r.key().to_string());
+        match watch_repo.list_queue(&channel_id).await {
+            Ok(items) => {
+                state.queue = items.into_iter().map(QueueItemSummary::from).collect();
+            }
+            Err(e) => {
+                tracing::warn!(
+                    channel = %channel_id,
+                    error = %e,
+                    "Failed to hydrate watch queue from DB; starting empty"
+                );
+            }
+        }
+        match watch_repo.find_room(&channel_id).await {
+            Ok(Some(room)) => {
+                state.leader_id = room.leader.as_ref().map(|r| r.key().to_string());
+                if let Some(current) = room.current_item {
+                    let current_id = current.key().to_string();
+                    // Pull the current item out of the queue if it's still there.
+                    if let Some(pos) = state.queue.iter().position(|q| q.id == current_id) {
+                        let item = state.queue.remove(pos);
+                        state.playback.video_id = Some(item.video_id);
+                        state.playback.position_ms = room.playback_position_ms;
+                        state.playback.paused = true; // Restart from paused — leader resumes.
+                        state.playback.server_ts = now_ms();
+                        state.current_item_id = Some(current_id);
+                    }
+                }
+            }
+            Ok(None) => {
+                // ensure_room above should have created it; missing here is
+                // benign — first-write path will populate.
+            }
+            Err(e) => {
+                tracing::warn!(
+                    channel = %channel_id,
+                    error = %e,
+                    "Failed to hydrate watch_room metadata from DB"
+                );
+            }
         }
 
         let mut pulse = tokio::time::interval(SYNC_PULSE_INTERVAL);
@@ -363,6 +399,154 @@ async fn handle_command(
             state.reap_dead(dead);
             let _ = persist_playback(state, watch_repo).await;
         }
+        WatchCommand::QueueAdd {
+            from_user,
+            video_id,
+            title,
+            duration_ms,
+            thumbnail_url,
+            nonce,
+            reply_to,
+        } => {
+            // Validate the YouTube video id shape — 11 chars, URL-safe alphabet.
+            // Catches accidental URL-pastes and hostile payloads.
+            if !is_valid_youtube_id(&video_id) {
+                send_error(&reply_to, &state.channel_id, "bad_video_id",
+                    "video_id must be an 11-character YouTube id");
+                return;
+            }
+            // Cap title length so the queue payload stays bounded.
+            let title = title.chars().take(200).collect::<String>();
+            let item = match watch_repo
+                .add_queue_item(
+                    &state.channel_id,
+                    &from_user,
+                    video_id,
+                    title,
+                    duration_ms.max(0),
+                    thumbnail_url,
+                )
+                .await
+            {
+                Ok(item) => item,
+                Err(e) => {
+                    tracing::warn!(channel = %state.channel_id, error = %e, "queue add failed");
+                    send_error(&reply_to, &state.channel_id, "internal", "Failed to add item");
+                    return;
+                }
+            };
+            let summary = QueueItemSummary::from(item);
+            let item_id = summary.id.clone();
+
+            // If nothing is playing, immediately promote this new item to
+            // current — better UX than asking the leader to also click play.
+            let advance = state.current_item_id.is_none() && state.playback.video_id.is_none();
+            if advance {
+                promote_to_current(state, summary);
+                let _ = persist_playback(state, watch_repo).await;
+            } else {
+                state.queue.push(summary);
+                sort_queue(&mut state.queue);
+            }
+
+            let _ = reply_to.try_send(
+                ServerMessage::WatchQueueAck {
+                    channel_id: state.channel_id.clone(),
+                    nonce,
+                    item_id,
+                }
+                .to_json(),
+            );
+
+            if advance {
+                broadcast_advance(state);
+            } else {
+                broadcast_queue_update(state);
+            }
+        }
+        WatchCommand::QueueRemove {
+            from_user,
+            item_id,
+            reply_to,
+        } => {
+            let Some(idx) = state.queue.iter().position(|q| q.id == item_id) else {
+                send_error(&reply_to, &state.channel_id, "not_found", "Queue item not found");
+                return;
+            };
+            let is_adder = state.queue[idx].added_by == from_user;
+            let is_leader = state.leader_id.as_deref() == Some(from_user.as_str());
+            if !is_adder && !is_leader {
+                send_error(&reply_to, &state.channel_id, "forbidden",
+                    "Only the adder or the leader can remove this item");
+                return;
+            }
+            if let Err(e) = watch_repo.remove_queue_item(&item_id).await {
+                tracing::warn!(channel = %state.channel_id, error = %e, "queue remove failed");
+                send_error(&reply_to, &state.channel_id, "internal", "Failed to remove item");
+                return;
+            }
+            state.queue.remove(idx);
+            broadcast_queue_update(state);
+        }
+        WatchCommand::Vote {
+            from_user,
+            item_id,
+            value,
+            reply_to,
+        } => {
+            if !(-1..=1).contains(&value) {
+                send_error(&reply_to, &state.channel_id, "bad_value",
+                    "vote value must be -1, 0, or 1");
+                return;
+            }
+            if !state.queue.iter().any(|q| q.id == item_id) {
+                send_error(&reply_to, &state.channel_id, "not_found", "Queue item not found");
+                return;
+            }
+            let new_score = match watch_repo.set_vote(&from_user, &item_id, value).await {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(channel = %state.channel_id, error = %e, "vote failed");
+                    send_error(&reply_to, &state.channel_id, "internal", "Failed to record vote");
+                    return;
+                }
+            };
+            // Update in-memory mirror so the broadcast reflects new ordering
+            // without round-tripping list_queue.
+            if let Some(item) = state.queue.iter_mut().find(|q| q.id == item_id) {
+                item.score = new_score;
+            }
+            sort_queue(&mut state.queue);
+            broadcast_queue_update(state);
+        }
+        WatchCommand::Skip { from_user, reply_to } => {
+            if state.leader_id.as_deref() != Some(from_user.as_str()) {
+                send_error(&reply_to, &state.channel_id, "not_leader",
+                    "Only the leader can skip");
+                return;
+            }
+            advance_queue(state, watch_repo).await;
+            broadcast_advance(state);
+        }
+        WatchCommand::Reaction { from_user, username, emoji } => {
+            // Reactions echo to everyone including the sender so all clients
+            // render identically. Skip silently if the user somehow isn't a
+            // subscriber — connection.rs already enforces this, but defense
+            // in depth keeps us from leaking spurious broadcasts.
+            if !state.subscribers.contains_key(&from_user) {
+                return;
+            }
+            let msg = ServerMessage::WatchReaction {
+                channel_id: state.channel_id.clone(),
+                user_id: from_user,
+                username,
+                emoji,
+                ts: now_ms(),
+            }
+            .to_json();
+            let dead = state.broadcast(msg, None);
+            state.reap_dead(dead);
+        }
         WatchCommand::Broadcast {
             message,
             exclude_user,
@@ -370,6 +554,114 @@ async fn handle_command(
             let dead = state.broadcast(message, exclude_user.as_deref());
             state.reap_dead(dead);
         }
+    }
+}
+
+fn promote_to_current(state: &mut WatchRoomState, item: QueueItemSummary) {
+    state.playback.video_id = Some(item.video_id.clone());
+    state.playback.position_ms = 0;
+    state.playback.paused = false;
+    state.playback.server_ts = now_ms();
+    state.current_item_id = Some(item.id);
+}
+
+/// Move the head of the queue (highest score, oldest tie-breaker) into
+/// `current_item_id` and delete the previous current item from disk if any.
+async fn advance_queue(state: &mut WatchRoomState, watch_repo: &Arc<dyn WatchRepo>) {
+    if let Some(prev) = state.current_item_id.take() {
+        if let Err(e) = watch_repo.remove_queue_item(&prev).await {
+            tracing::warn!(channel = %state.channel_id, error = %e, "failed to delete advanced item");
+        }
+    }
+    sort_queue(&mut state.queue);
+    if state.queue.is_empty() {
+        state.playback.video_id = None;
+        state.playback.position_ms = 0;
+        state.playback.paused = true;
+        state.playback.server_ts = now_ms();
+        state.current_item_id = None;
+    } else {
+        let next = state.queue.remove(0);
+        promote_to_current(state, next);
+    }
+    let _ = persist_playback(state, watch_repo).await;
+}
+
+fn broadcast_queue_update(state: &mut WatchRoomState) {
+    let msg = ServerMessage::WatchQueueUpdate {
+        channel_id: state.channel_id.clone(),
+        queue: serde_json::to_value(&state.queue).unwrap_or(serde_json::Value::Array(vec![])),
+    }
+    .to_json();
+    let dead = state.broadcast(msg, None);
+    state.reap_dead(dead);
+}
+
+fn broadcast_advance(state: &mut WatchRoomState) {
+    let msg = ServerMessage::WatchAdvance {
+        channel_id: state.channel_id.clone(),
+        playback: serde_json::to_value(&state.playback).unwrap_or(serde_json::Value::Null),
+        queue: serde_json::to_value(&state.queue).unwrap_or(serde_json::Value::Array(vec![])),
+    }
+    .to_json();
+    let dead = state.broadcast(msg, None);
+    state.reap_dead(dead);
+}
+
+fn sort_queue(queue: &mut [QueueItemSummary]) {
+    // Score desc; ties broken by id asc so the in-memory order matches what
+    // `WatchRepo::list_queue` returns from the DB (which orders by
+    // `score DESC, created_at ASC`). The `id` proxy is stable across votes
+    // because Surreal ids are monotonic per session and `created_at` ordering
+    // tracks insertion order in practice.
+    queue.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
+}
+
+/// YouTube video ids are exactly 11 characters from the URL-safe base64
+/// alphabet. We use this both as input validation (against pasted URLs) and
+/// as a guard against arbitrary payloads getting persisted.
+fn is_valid_youtube_id(id: &str) -> bool {
+    id.len() == 11 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_youtube_id_passes() {
+        assert!(is_valid_youtube_id("dQw4w9WgXcQ"));
+        assert!(is_valid_youtube_id("_-aaaaaaaaa"));
+    }
+
+    #[test]
+    fn invalid_youtube_id_rejected() {
+        assert!(!is_valid_youtube_id("tooshort"));
+        assert!(!is_valid_youtube_id("waytoolongforanid"));
+        assert!(!is_valid_youtube_id("badchar!!!!"));
+        assert!(!is_valid_youtube_id(""));
+    }
+
+    #[test]
+    fn sort_queue_orders_by_score_desc() {
+        let mut q = vec![
+            QueueItemSummary {
+                id: "a".into(), video_id: "v1".into(), title: "".into(),
+                duration_ms: 0, thumbnail_url: None, added_by: "u".into(), score: 1,
+            },
+            QueueItemSummary {
+                id: "b".into(), video_id: "v2".into(), title: "".into(),
+                duration_ms: 0, thumbnail_url: None, added_by: "u".into(), score: 5,
+            },
+            QueueItemSummary {
+                id: "c".into(), video_id: "v3".into(), title: "".into(),
+                duration_ms: 0, thumbnail_url: None, added_by: "u".into(), score: -2,
+            },
+        ];
+        sort_queue(&mut q);
+        assert_eq!(q[0].id, "b");
+        assert_eq!(q[1].id, "a");
+        assert_eq!(q[2].id, "c");
     }
 }
 

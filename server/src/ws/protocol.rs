@@ -81,6 +81,32 @@ pub enum ClientMessage {
         position_ms: i64,
         client_ts: u64,
     },
+    WatchQueueAdd {
+        channel_id: String,
+        video_id: String,
+        title: String,
+        duration_ms: i64,
+        thumbnail_url: Option<String>,
+        nonce: String,
+    },
+    WatchQueueRemove {
+        channel_id: String,
+        item_id: String,
+    },
+    WatchVote {
+        channel_id: String,
+        item_id: String,
+        /// -1, 0, or 1. 0 clears any prior vote.
+        value: i32,
+    },
+    /// Leader-only. Advances queue to next item.
+    WatchSkip {
+        channel_id: String,
+    },
+    WatchReaction {
+        channel_id: String,
+        emoji: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -216,6 +242,35 @@ pub enum ServerMessage {
         position_ms: i64,
         server_ts: u64,
         paused: bool,
+    },
+    /// Diff broadcast after add/remove/score-reorder. Clients reconcile their
+    /// local optimistic state against this.
+    WatchQueueUpdate {
+        channel_id: String,
+        queue: serde_json::Value,
+    },
+    /// Optimistic-add acknowledgment back to the sender — matches the request
+    /// nonce so the client can flip its pending entry to confirmed.
+    WatchQueueAck {
+        channel_id: String,
+        nonce: String,
+        item_id: String,
+    },
+    /// Sent when the leader skips or a video ends server-side; carries the
+    /// new playback state plus the queue (the front item is removed).
+    WatchAdvance {
+        channel_id: String,
+        playback: serde_json::Value,
+        queue: serde_json::Value,
+    },
+    /// Floating emoji reaction. Echoed back to the sender too so the UI
+    /// renders identically across all viewers.
+    WatchReaction {
+        channel_id: String,
+        user_id: String,
+        username: String,
+        emoji: String,
+        ts: u64,
     },
     WatchLeaderChanged {
         channel_id: String,
