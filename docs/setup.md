@@ -39,14 +39,14 @@ docker compose down -v
 
 ## Option B: Production Docker on a VPS
 
-Use this path for a public deployment behind a real domain. Caddy is the only
-public ingress and provisions HTTPS automatically; the client, API, Redis, and
-SurrealDB stay on the private Compose network.
+Use this path for the public Nexus deployment at `https://nexus.wizconsults.com`.
+Caddy is the only public ingress and provisions HTTPS automatically; the
+client, API, Redis, and SurrealDB stay on the private Compose network.
 
 ### Prerequisites
 
 - Linux VPS with Docker and Docker Compose
-- DNS `A`/`AAAA` record for your domain pointing at the VPS
+- DNS `A`/`AAAA` record for `nexus.wizconsults.com` pointing at the VPS
 - Host firewall allowing only SSH, HTTP 80, and HTTPS 443
 
 ### Steps
@@ -60,14 +60,14 @@ Set these values in `.env`:
 
 ```bash
 NEXUS_ENV=production
-DOMAIN=app.example.com
-ACME_EMAIL=admin@example.com
+DOMAIN=nexus.wizconsults.com
+ACME_EMAIL=admin@wizconsults.com
 JWT_SECRET=<openssl rand -hex 32>
 SURREAL_USER=nexus-admin
 SURREAL_PASS=<openssl rand -hex 24>
 REDIS_PASSWORD=<openssl rand -hex 24>
 SECURE_COOKIES=true
-CORS_ORIGIN=https://app.example.com
+CORS_ORIGIN=https://nexus.wizconsults.com
 ```
 
 Leave `PUBLIC_API_URL` and `PUBLIC_WS_URL` at their example values or blank;
@@ -82,12 +82,16 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml config
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # 4. Check service readiness
-curl -fsS https://app.example.com/health
-curl -fsS https://app.example.com/ready
+curl -fsS https://nexus.wizconsults.com/health
+curl -fsS https://nexus.wizconsults.com/ready
 ```
 
 Expected public ports in the merged config are only `80:80`, `443:443`, and
 `443:443/udp` on the `caddy` service.
+
+After the readiness probes pass, open `https://nexus.wizconsults.com` in a
+browser and verify registration/login plus a WebSocket-backed room flow such as
+chat, presence, watch rooms, or the whiteboard.
 
 ## Option C: Local Development
 

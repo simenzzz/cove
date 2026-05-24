@@ -14,8 +14,8 @@ struct CreateWhiteboardDb {
     state_b64: String,
     state_vector_b64: String,
     snapshot_count: u64,
-    last_snapshot_at: chrono::DateTime<chrono::Utc>,
-    created_at: chrono::DateTime<chrono::Utc>,
+    last_snapshot_at: surrealdb::Datetime,
+    created_at: surrealdb::Datetime,
 }
 
 #[derive(Debug, Serialize)]
@@ -23,7 +23,7 @@ struct CreateCheckpointDb {
     channel: surrealdb::RecordId,
     state_b64: String,
     label: Option<String>,
-    created_at: chrono::DateTime<chrono::Utc>,
+    created_at: surrealdb::Datetime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,7 +123,7 @@ impl WhiteboardRepo for SurrealWhiteboardRepo {
         // First save: row doesn't exist. CREATE keyed by channel_id. If a
         // concurrent first-save raced us, the second CREATE errors with a
         // duplicate-key — retry the UPDATE path once to claim our increment.
-        let now = chrono::Utc::now();
+        let now = surrealdb::Datetime::from(chrono::Utc::now());
         let created: Result<Option<Whiteboard>, _> = self
             .db
             .create(("whiteboard", channel_id))
@@ -132,7 +132,7 @@ impl WhiteboardRepo for SurrealWhiteboardRepo {
                 state_b64: state_b64.clone(),
                 state_vector_b64: state_vector_b64.clone(),
                 snapshot_count: 1,
-                last_snapshot_at: now,
+                last_snapshot_at: now.clone(),
                 created_at: now,
             })
             .await;
@@ -168,7 +168,7 @@ impl WhiteboardRepo for SurrealWhiteboardRepo {
         state_b64: String,
         label: Option<String>,
     ) -> Result<WhiteboardCheckpoint, AppError> {
-        let now = chrono::Utc::now();
+        let now = surrealdb::Datetime::from(chrono::Utc::now());
         let created: Option<WhiteboardCheckpoint> = self
             .db
             .create("whiteboard_checkpoint")

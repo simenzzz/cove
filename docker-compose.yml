@@ -6,6 +6,13 @@
 # the schema is in place before the app touches the DB.
 
 services:
+  surreal-permissions:
+    image: busybox:1.36
+    command: ["sh", "-c", "chown -R 65532:65532 /data"]
+    volumes:
+      - surreal-data:/data
+    restart: "no"
+
   surrealdb:
     image: surrealdb/surrealdb:v2
     pull_policy: always
@@ -24,6 +31,9 @@ services:
       - "8000:8000"
     volumes:
       - surreal-data:/data
+    depends_on:
+      surreal-permissions:
+        condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "/surreal", "is-ready", "--endpoint", "http://localhost:8000"]
@@ -90,7 +100,7 @@ services:
     env_file: .env
     environment:
       # Override host inside the container — .env may have host-local defaults.
-      SURREAL_URL: ws://surrealdb:8000
+      SURREAL_URL: surrealdb:8000
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       RUST_LOG: ${RUST_LOG:-info}
     depends_on:

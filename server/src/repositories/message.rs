@@ -13,7 +13,7 @@ pub struct CreateMessageDb {
     pub content: String,
     pub author: surrealdb::RecordId,
     pub channel: surrealdb::RecordId,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: surrealdb::Datetime,
 }
 
 #[cfg_attr(test, automock)]
@@ -66,7 +66,7 @@ impl MessageRepo for SurrealMessageRepo {
                 content,
                 author: surrealdb::RecordId::from(("user", author_id)),
                 channel: surrealdb::RecordId::from(("channel", channel_id)),
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
             })
             .await?;
         record.ok_or_else(|| AppError::Internal("Failed to create message".into()))
@@ -86,7 +86,7 @@ impl MessageRepo for SurrealMessageRepo {
                 content,
                 author: surrealdb::RecordId::from(("user", author_id)),
                 channel: surrealdb::RecordId::from(("channel", channel_id)),
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
             })
             .await?;
         record.ok_or_else(|| AppError::Internal("Failed to create message".into()))

@@ -13,7 +13,7 @@ pub struct CreateChannelDb {
     pub name: String,
     pub channel_type: ChannelType,
     pub server: surrealdb::RecordId,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: surrealdb::Datetime,
 }
 
 #[cfg_attr(test, automock)]
@@ -44,7 +44,7 @@ impl ChannelRepo for SurrealChannelRepo {
                 name: input.name,
                 channel_type: input.channel_type,
                 server: surrealdb::RecordId::from(("server", server_id)),
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
             })
             .await?;
         record.ok_or_else(|| AppError::Internal("Failed to create channel".into()))

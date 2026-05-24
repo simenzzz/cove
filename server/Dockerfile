@@ -5,7 +5,7 @@
 # final `cargo build` layer.
 
 # ─── Builder ───────────────────────────────────────────────────────────────
-FROM rust:1.87-slim AS builder
+FROM rust:1.94-slim-bookworm AS builder
 
 WORKDIR /app
 

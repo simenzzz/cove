@@ -14,7 +14,7 @@ pub struct CreateServerDb {
     pub description: Option<String>,
     pub icon_url: Option<String>,
     pub owner: surrealdb::RecordId,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: surrealdb::Datetime,
 }
 
 #[cfg_attr(test, automock)]
@@ -52,7 +52,7 @@ impl ServerRepo for SurrealServerRepo {
                 description: input.description,
                 icon_url: input.icon_url,
                 owner: surrealdb::RecordId::from(("user", owner_id)),
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
             })
             .await?;
         record.ok_or_else(|| AppError::Internal("Failed to create server".into()))

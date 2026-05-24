@@ -15,9 +15,9 @@ struct CreateWatchRoomDb {
     current_item: Option<surrealdb::RecordId>,
     playback_paused: bool,
     playback_position_ms: i64,
-    playback_updated_at: chrono::DateTime<chrono::Utc>,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
+    playback_updated_at: surrealdb::Datetime,
+    created_at: surrealdb::Datetime,
+    updated_at: surrealdb::Datetime,
 }
 
 #[derive(Debug, Serialize)]
@@ -30,7 +30,7 @@ struct CreateQueueItemDb {
     added_by: surrealdb::RecordId,
     score: i32,
     position: i32,
-    created_at: chrono::DateTime<chrono::Utc>,
+    created_at: surrealdb::Datetime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,7 +119,7 @@ impl WatchRepo for SurrealWatchRepo {
         if let Some(existing) = self.find_room(channel_id).await? {
             return Ok(existing);
         }
-        let now = chrono::Utc::now();
+        let now = surrealdb::Datetime::from(chrono::Utc::now());
         let created: Result<Option<WatchRoom>, _> = self
             .db
             .create(("watch_room", channel_id))
@@ -129,8 +129,8 @@ impl WatchRepo for SurrealWatchRepo {
                 current_item: None,
                 playback_paused: true,
                 playback_position_ms: 0,
-                playback_updated_at: now,
-                created_at: now,
+                playback_updated_at: now.clone(),
+                created_at: now.clone(),
                 updated_at: now,
             })
             .await;
@@ -210,7 +210,7 @@ impl WatchRepo for SurrealWatchRepo {
             .map(|p| p + 1)
             .unwrap_or(0);
 
-        let now = chrono::Utc::now();
+        let now = surrealdb::Datetime::from(chrono::Utc::now());
         let created: Option<QueueItem> = self
             .db
             .create("watch_queue_item")

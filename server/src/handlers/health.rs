@@ -52,7 +52,7 @@ pub async fn ready(State(state): State<AppState>) -> impl IntoResponse {
 async fn check_db(state: &AppState) -> bool {
     state
         .db
-        .query("SELECT 1 AS health")
+        .query("RETURN 1")
         .await
         .map(|_| true)
         .unwrap_or(false)

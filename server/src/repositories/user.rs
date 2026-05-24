@@ -41,7 +41,7 @@ pub struct CreateUserDb {
     pub avatar_url: Option<String>,
     pub status: UserStatus,
     pub password_hash: String,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: surrealdb::Datetime,
 }
 
 #[cfg_attr(test, automock)]
@@ -74,7 +74,7 @@ impl UserRepo for SurrealUserRepo {
                 avatar_url: None,
                 status: UserStatus::Online,
                 password_hash,
-                created_at: chrono::Utc::now(),
+                created_at: chrono::Utc::now().into(),
             })
             .await?;
         record.ok_or_else(|| AppError::Internal("Failed to create user".into()))

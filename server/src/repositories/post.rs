@@ -16,8 +16,8 @@ struct CreatePostDb {
     state_vector_b64: String,
     published: bool,
     published_content: Option<String>,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
+    created_at: surrealdb::Datetime,
+    updated_at: surrealdb::Datetime,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,7 +60,7 @@ impl SurrealPostRepo {
 #[async_trait]
 impl PostRepo for SurrealPostRepo {
     async fn create_draft(&self, author_id: &str, title: String) -> Result<Post, AppError> {
-        let now = chrono::Utc::now();
+        let now = surrealdb::Datetime::from(chrono::Utc::now());
         let record: Option<Post> = self
             .db
             .create("post")
@@ -71,7 +71,7 @@ impl PostRepo for SurrealPostRepo {
                 state_vector_b64: String::new(),
                 published: false,
                 published_content: None,
-                created_at: now,
+                created_at: now.clone(),
                 updated_at: now,
             })
             .await?;
