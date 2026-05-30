@@ -3,6 +3,10 @@
   import CollabEditor from '$lib/components/CollabEditor.svelte';
   import CollabInvite from '$lib/components/CollabInvite.svelte';
   import { fetchPost, publishPost, type Post } from '$lib/stores/posts';
+  import Badge from '$components/ui/Badge.svelte';
+  import Button from '$components/ui/Button.svelte';
+  import Skeleton from '$components/ui/Skeleton.svelte';
+  import { Send } from '@lucide/svelte';
 
   let postId = $derived($page.params.postId ?? '');
   let post = $state<Post | null>(null);
@@ -37,77 +41,34 @@
   }
 </script>
 
-<div class="container">
+<div class="mx-auto max-w-2xl px-4 py-10">
   {#if loading}
-    <p>Loading...</p>
+    <Skeleton class="h-9 w-3/4" />
+    <Skeleton class="mt-6 h-40 w-full" rounded="rounded-2xl" />
   {:else if error}
-    <p class="error">{error}</p>
+    <div class="rounded-2xl border border-danger/40 bg-danger-soft p-4 text-sm text-danger">
+      {error}
+    </div>
   {:else if post}
-    <header>
-      <h1>{post.title}</h1>
+    <header class="mb-5 flex items-center gap-3">
+      <h1 class="flex-1 font-display text-3xl font-bold leading-tight text-linen">{post.title}</h1>
       {#if post.published}
-        <span class="badge published">Published</span>
+        <Badge tone="success">Published</Badge>
       {:else}
-        <button onclick={onPublish} disabled={publishing}>
-          {publishing ? 'Publishing...' : 'Publish'}
-        </button>
+        <Button onclick={onPublish} disabled={publishing}>
+          <Send size={15} />
+          {publishing ? 'Publishing…' : 'Publish'}
+        </Button>
       {/if}
     </header>
 
     {#if post.published && post.published_content !== null}
-      <pre class="published-content">{post.published_content}</pre>
+      <article
+        class="whitespace-pre-wrap font-sans text-base leading-relaxed text-linen-dim"
+      >{post.published_content}</article>
     {:else}
       <CollabInvite {postId} />
       <CollabEditor {postId} />
     {/if}
   {/if}
 </div>
-
-<style>
-  .container {
-    max-width: 48rem;
-    margin: 2rem auto;
-    padding: 0 1rem;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-  h1 {
-    flex: 1;
-    margin: 0;
-  }
-  button {
-    padding: 0.4rem 0.9rem;
-    border: none;
-    border-radius: 0.25rem;
-    background: #059669;
-    color: white;
-    cursor: pointer;
-  }
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  .badge {
-    padding: 0.2rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-  }
-  .badge.published {
-    background: #d1fae5;
-    color: #065f46;
-  }
-  .error {
-    color: #e11d48;
-  }
-  .published-content {
-    white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    padding: 1rem;
-    background: #f9fafb;
-    border-radius: 0.375rem;
-  }
-</style>

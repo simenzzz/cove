@@ -15,9 +15,17 @@
 </script>
 
 {#if avatarUrl}
-  <img src={avatarUrl} alt={username} class="rounded-full {sizeClasses[size]}" />
+  <img
+    src={avatarUrl}
+    alt={username}
+    class="rounded-2xl object-cover ring-1 ring-line {sizeClasses[size]}"
+  />
 {:else}
-  <div class="rounded-full bg-indigo-600 flex items-center justify-center font-semibold {sizeClasses[size]}">
-    {username.charAt(0).toUpperCase()}
+  <div
+    class="flex items-center justify-center rounded-2xl bg-gradient-to-br from-copper to-copper-deep font-display font-semibold text-canvas ring-1 ring-copper-bright/30 {sizeClasses[
+      size
+    ]}"
+  >
+    {(username.charAt(0) || '?').toUpperCase()}
   </div>
 {/if}

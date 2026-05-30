@@ -38,6 +38,7 @@
     <button
       class="reaction-btn"
       onclick={() => sendReaction(channelId, emoji)}
+      aria-label="React with {emoji}"
       title="React with {emoji}"
     >
       {emoji}
@@ -76,21 +77,27 @@
   }
   .reaction-picker {
     display: flex;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    background: rgba(17, 24, 39, 0.85);
-    border-radius: 0.375rem;
+    gap: 0.3rem;
+    padding: 0.35rem 0.5rem;
+    background: color-mix(in oklab, var(--color-surface) 85%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xl);
     align-self: flex-start;
   }
   .reaction-btn {
     background: transparent;
-    border: 1px solid rgb(55, 65, 81);
-    border-radius: 0.25rem;
-    padding: 0.125rem 0.375rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    padding: 0.2rem 0.45rem;
     font-size: 1.1rem;
     cursor: pointer;
+    transition:
+      background 140ms ease,
+      transform 140ms ease;
   }
   .reaction-btn:hover {
-    background: rgb(55, 65, 81);
+    background: var(--color-elevated);
+    transform: scale(1.12);
   }
 </style>

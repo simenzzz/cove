@@ -8,11 +8,13 @@
   let { status }: Props = $props();
 
   const statusColors: Record<UserStatus, string> = {
-    online: 'bg-green-500',
-    idle: 'bg-yellow-500',
-    dnd: 'bg-red-500',
-    offline: 'bg-gray-500',
+    online: 'bg-success',
+    idle: 'bg-warn',
+    dnd: 'bg-danger',
+    offline: 'bg-linen-faint',
   };
 </script>
 
-<span class="inline-block w-3 h-3 rounded-full border-2 border-gray-800 {statusColors[status]}"></span>
+<span
+  class="inline-block h-3 w-3 rounded-full border-2 border-surface {statusColors[status]}"
+></span>

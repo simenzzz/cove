@@ -26,8 +26,8 @@
         />
       {:else}
         <div class="empty">
-          <p class="text-gray-400">No video playing.</p>
-          <p class="text-sm text-gray-500 mt-2">
+          <p class="font-display text-lg font-semibold text-linen">No video playing</p>
+          <p class="mt-1.5 text-sm text-linen-muted">
             Add a YouTube URL to the queue to get started.
           </p>
         </div>
@@ -91,14 +91,17 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: #111827;
-    border-radius: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-2xl);
+    text-align: center;
   }
   .error-banner {
-    background: rgb(127, 29, 29);
-    color: rgb(254, 226, 226);
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.375rem;
+    background: var(--color-danger-soft);
+    color: var(--color-danger);
+    border: 1px solid color-mix(in oklab, var(--color-danger) 40%, transparent);
+    padding: 0.5rem 0.85rem;
+    border-radius: var(--radius-lg);
     font-size: 0.875rem;
   }
 </style>

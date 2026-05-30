@@ -35,11 +35,11 @@
 
 <div class="flex h-full">
   <ChannelList {serverId} />
-  <div class="flex flex-col flex-1 min-w-0">
+  <div class="flex min-w-0 flex-1 flex-col">
     {#if room && $room && $auth.user}
       <WatchRoom state={$room} currentUserId={$auth.user.id} />
     {:else}
-      <div class="flex-1 flex items-center justify-center text-gray-500">
+      <div class="flex flex-1 items-center justify-center text-sm text-linen-muted">
         Loading watch room…
       </div>
     {/if}

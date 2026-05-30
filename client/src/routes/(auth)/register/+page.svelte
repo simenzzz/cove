@@ -1,6 +1,9 @@
 <script lang="ts">
   import { register } from '$stores/auth';
   import { goto } from '$app/navigation';
+  import Button from '$components/ui/Button.svelte';
+  import Input from '$components/ui/Input.svelte';
+  import { AlertCircle } from '@lucide/svelte';
 
   let username = $state('');
   let displayName = $state('');
@@ -38,55 +41,69 @@
   }
 </script>
 
-<div class="flex items-center justify-center min-h-screen">
-  <div class="w-full max-w-md p-8 bg-gray-800 rounded-lg">
-    <h1 class="text-2xl font-bold mb-6">Create your Nexus account</h1>
+<div>
+  <p class="text-2xs font-semibold uppercase tracking-[0.18em] text-copper">Join Cove</p>
+  <h1 class="mt-1.5 font-display text-3xl font-semibold text-linen">Make yourself at home</h1>
+  <p class="mt-2 text-sm text-linen-muted">A handle, a password, and you're in.</p>
 
-    {#if error}
-      <div class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-200 text-sm">
-        {error}
-      </div>
-    {/if}
+  {#if error}
+    <div
+      class="mt-6 flex items-center gap-2.5 rounded-xl border border-danger/40 bg-danger-soft px-3.5 py-3 text-sm text-danger"
+    >
+      <AlertCircle size={16} class="shrink-0" />
+      <span>{error}</span>
+    </div>
+  {/if}
 
-    <form onsubmit={handleSubmit} class="space-y-4">
-      <input
+  <form onsubmit={handleSubmit} class="mt-6 space-y-4">
+    <div class="space-y-1.5">
+      <label for="username" class="text-xs font-medium text-linen-dim">Username</label>
+      <Input
+        id="username"
         type="text"
         bind:value={username}
-        placeholder="Username (3-32 chars, alphanumeric + underscore)"
+        placeholder="3–32 chars · letters, numbers, _"
         required
-        class="w-full p-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
-      <input
+    </div>
+    <div class="space-y-1.5">
+      <label for="displayName" class="text-xs font-medium text-linen-dim">Display name</label>
+      <Input
+        id="displayName"
         type="text"
         bind:value={displayName}
-        placeholder="Display Name"
-        class="w-full p-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        placeholder="What should we call you?"
       />
-      <input
+    </div>
+    <div class="space-y-1.5">
+      <label for="password" class="text-xs font-medium text-linen-dim">Password</label>
+      <Input
+        id="password"
         type="password"
         bind:value={password}
-        placeholder="Password (8+ characters)"
+        placeholder="At least 8 characters"
         required
-        class="w-full p-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
-      <input
+    </div>
+    <div class="space-y-1.5">
+      <label for="confirm" class="text-xs font-medium text-linen-dim">Confirm password</label>
+      <Input
+        id="confirm"
         type="password"
         bind:value={confirmPassword}
-        placeholder="Confirm Password"
+        placeholder="Type it again"
         required
-        class="w-full p-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
-      <button
-        type="submit"
-        disabled={loading}
-        class="w-full p-3 bg-indigo-600 rounded font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50"
-      >
-        {loading ? 'Creating account...' : 'Register'}
-      </button>
-    </form>
-    <p class="mt-4 text-sm text-gray-400">
-      Already have an account?
-      <a href="/login" class="text-indigo-400 hover:underline">Login</a>
-    </p>
-  </div>
+    </div>
+    <Button type="submit" full size="lg" loading={loading}>
+      {loading ? 'Creating account…' : 'Create account'}
+    </Button>
+  </form>
+
+  <p class="mt-6 text-sm text-linen-muted">
+    Already have an account?
+    <a href="/login" class="font-medium text-copper-bright transition-colors hover:text-copper"
+      >Sign in</a
+    >
+  </p>
 </div>

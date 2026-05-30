@@ -1,5 +1,8 @@
 <script lang="ts">
   import { inviteCollaborator } from '$lib/stores/posts';
+  import Input from '$components/ui/Input.svelte';
+  import Button from '$components/ui/Button.svelte';
+  import { UserPlus } from '@lucide/svelte';
 
   let { postId }: { postId: string } = $props();
 
@@ -31,72 +34,24 @@
   }
 </script>
 
-<form onsubmit={onSubmit} class="invite">
-  <label for="invite-user">Invite collaborator</label>
-  <div class="row">
-    <input
+<form onsubmit={onSubmit} class="mb-4 rounded-2xl border border-line bg-surface p-4">
+  <label for="invite-user" class="text-xs font-medium text-linen-dim">Invite collaborator</label>
+  <div class="mt-2 flex gap-2.5">
+    <Input
       id="invite-user"
-      type="text"
       bind:value={userId}
       placeholder="user id"
       disabled={pending}
+      class="flex-1"
     />
-    <button type="submit" disabled={pending || !userId.trim()}>
+    <Button type="submit" class="shrink-0" disabled={pending || !userId.trim()}>
+      <UserPlus size={16} />
       {pending ? 'Inviting…' : 'Invite'}
-    </button>
+    </Button>
   </div>
   {#if error}
-    <p class="error">{error}</p>
+    <p class="mt-2 text-sm text-danger">{error}</p>
   {:else if success}
-    <p class="success">{success}</p>
+    <p class="mt-2 text-sm text-success">{success}</p>
   {/if}
 </form>
-
-<style>
-  .invite {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.75rem;
-    border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: 0.4rem;
-    background: #fafafa;
-  }
-  label {
-    font-size: 0.85rem;
-    color: #374151;
-    font-weight: 500;
-  }
-  .row {
-    display: flex;
-    gap: 0.5rem;
-  }
-  input {
-    flex: 1;
-    padding: 0.4rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 0.25rem;
-  }
-  button {
-    padding: 0.4rem 0.9rem;
-    border: none;
-    border-radius: 0.25rem;
-    background: #2563eb;
-    color: white;
-    cursor: pointer;
-  }
-  button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-  .error {
-    color: #e11d48;
-    margin: 0;
-    font-size: 0.85rem;
-  }
-  .success {
-    color: #047857;
-    margin: 0;
-    font-size: 0.85rem;
-  }
-</style>

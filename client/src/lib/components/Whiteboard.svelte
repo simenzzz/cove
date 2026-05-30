@@ -495,9 +495,11 @@
   .whiteboard {
     position: relative;
     display: inline-block;
-    background: #fff;
-    border: 1px solid #ddd;
-    border-radius: 4px;
+    background: #fdfbf7; /* warm paper — drawing surface stays light for ink legibility */
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-soft);
     cursor: crosshair;
   }
   canvas {

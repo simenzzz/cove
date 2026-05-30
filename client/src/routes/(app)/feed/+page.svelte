@@ -1,6 +1,10 @@
 <script lang="ts">
   import PostCard from '$lib/components/PostCard.svelte';
+  import SectionHeading from '$components/ui/SectionHeading.svelte';
+  import Skeleton from '$components/ui/Skeleton.svelte';
+  import Button from '$components/ui/Button.svelte';
   import { fetchPublishedPosts, postIdToString, type Post } from '$lib/stores/posts';
+  import { PenLine, Newspaper } from '@lucide/svelte';
 
   let items = $state<Post[]>([]);
   let loading = $state(true);
@@ -20,46 +24,53 @@
   });
 </script>
 
-<div class="container">
-  <h1>Feed</h1>
+<div class="mx-auto max-w-2xl px-4 py-8">
+  <SectionHeading
+    eyebrow="The latest"
+    title="Your feed"
+    subtitle="Fresh posts from across your coves."
+  >
+    {#snippet actions()}
+      <Button href="/posts/new" size="sm">
+        <PenLine size={15} /> Write
+      </Button>
+    {/snippet}
+  </SectionHeading>
 
-  {#if loading}
-    <p>Loading...</p>
-  {:else if error}
-    <p class="error">{error}</p>
-  {:else if items.length === 0}
-    <p class="empty">No published posts yet. <a href="/posts/new">Write one</a>.</p>
-  {:else}
-    <ul class="posts">
-      {#each items as post (postIdToString(post))}
-        <li>
-          <PostCard {post} />
-        </li>
-      {/each}
-    </ul>
-  {/if}
+  <div class="mt-7">
+    {#if loading}
+      <div class="space-y-3">
+        {#each Array(4) as _}
+          <div class="rounded-2xl border border-line bg-surface p-5">
+            <Skeleton class="h-5 w-2/3" />
+            <Skeleton class="mt-3 h-3.5 w-full" />
+            <Skeleton class="mt-2 h-3.5 w-4/5" />
+          </div>
+        {/each}
+      </div>
+    {:else if error}
+      <div class="rounded-2xl border border-danger/40 bg-danger-soft p-4 text-sm text-danger">
+        {error}
+      </div>
+    {:else if items.length === 0}
+      <div class="flex flex-col items-center rounded-2xl border border-dashed border-line-strong bg-surface/40 px-6 py-14 text-center">
+        <span class="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-copper-soft text-copper-bright">
+          <Newspaper size={22} />
+        </span>
+        <p class="font-display text-lg font-semibold text-linen">It's quiet in here</p>
+        <p class="mt-1 text-sm text-linen-muted">No published posts yet — be the first.</p>
+        <Button href="/posts/new" class="mt-5">
+          <PenLine size={15} /> Write a post
+        </Button>
+      </div>
+    {:else}
+      <ul class="flex flex-col gap-3">
+        {#each items as post (postIdToString(post))}
+          <li>
+            <PostCard {post} />
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
 </div>
-
-<style>
-  .container {
-    max-width: 48rem;
-    margin: 2rem auto;
-    padding: 0 1rem;
-  }
-  h1 {
-    margin-bottom: 1rem;
-  }
-  .posts {
-    list-style: none;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  .error {
-    color: #e11d48;
-  }
-  .empty {
-    color: #6b7280;
-  }
-</style>

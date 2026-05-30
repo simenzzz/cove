@@ -2,6 +2,9 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { fetchPost, type Post } from '$lib/stores/posts';
+  import Badge from '$components/ui/Badge.svelte';
+  import Skeleton from '$components/ui/Skeleton.svelte';
+  import { ArrowLeft } from '@lucide/svelte';
 
   let postId = $derived($page.params.postId ?? '');
   let post = $state<Post | null>(null);
@@ -29,53 +32,32 @@
   });
 </script>
 
-<div class="container">
+<div class="mx-auto max-w-2xl px-4 py-10">
+  <a
+    href="/feed"
+    class="mb-6 inline-flex items-center gap-1.5 text-sm text-linen-muted transition-colors hover:text-linen"
+  >
+    <ArrowLeft size={15} /> Back to feed
+  </a>
+
   {#if loading}
-    <p>Loading...</p>
+    <Skeleton class="h-9 w-3/4" />
+    <Skeleton class="mt-5 h-4 w-full" />
+    <Skeleton class="mt-2.5 h-4 w-full" />
+    <Skeleton class="mt-2.5 h-4 w-2/3" />
   {:else if error}
-    <p class="error">{error}</p>
+    <div class="rounded-2xl border border-danger/40 bg-danger-soft p-4 text-sm text-danger">
+      {error}
+    </div>
   {:else if post}
-    <header>
-      <h1>{post.title}</h1>
-      <span class="badge published">Published</span>
+    <header class="flex items-start gap-3">
+      <h1 class="flex-1 font-display text-3xl font-bold leading-tight text-linen">{post.title}</h1>
+      <Badge tone="success">Published</Badge>
     </header>
     {#if post.published_content !== null}
-      <pre class="content">{post.published_content}</pre>
+      <article
+        class="mt-6 whitespace-pre-wrap font-sans text-base leading-relaxed text-linen-dim"
+      >{post.published_content}</article>
     {/if}
   {/if}
 </div>
-
-<style>
-  .container {
-    max-width: 48rem;
-    margin: 2rem auto;
-    padding: 0 1rem;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-  h1 {
-    flex: 1;
-    margin: 0;
-  }
-  .badge {
-    padding: 0.2rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    background: #d1fae5;
-    color: #065f46;
-  }
-  .content {
-    white-space: pre-wrap;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    padding: 1rem;
-    background: #f9fafb;
-    border-radius: 0.375rem;
-  }
-  .error {
-    color: #e11d48;
-  }
-</style>

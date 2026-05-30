@@ -2,6 +2,8 @@
   import { wsClient } from '$lib/ws/client';
   import { addOptimisticMessage } from '$stores/chat';
   import { auth } from '$stores/auth';
+  import { SendHorizontal } from '@lucide/svelte';
+  import IconButton from '$components/ui/IconButton.svelte';
 
   let { channelId }: { channelId: string } = $props();
   let message = $state('');
@@ -21,6 +23,8 @@
       nonce,
       content,
       authorId: user?.id ?? '',
+      authorUsername: user?.username ?? '',
+      authorDisplayName: user?.displayName ?? user?.username ?? '',
       channelId,
       createdAt: new Date().toISOString(),
       status: 'pending',
@@ -52,12 +56,27 @@
   }
 </script>
 
-<form onsubmit={handleSubmit} class="p-4 border-t border-gray-700">
-  <input
-    type="text"
-    bind:value={message}
-    oninput={handleInput}
-    placeholder="Type a message..."
-    class="w-full p-3 bg-gray-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-  />
+<form onsubmit={handleSubmit} class="border-t border-line p-4">
+  <div
+    class="flex items-center gap-2 rounded-2xl border border-line-strong bg-elevated px-3 transition-colors focus-within:border-copper"
+  >
+    <input
+      type="text"
+      bind:value={message}
+      oninput={handleInput}
+      aria-label="Message"
+      placeholder="Type a message…"
+      class="flex-1 bg-transparent py-3 text-sm text-linen outline-none placeholder:text-linen-muted"
+    />
+    <IconButton
+      type="submit"
+      variant="primary"
+      size="sm"
+      label="Send message"
+      class="shrink-0"
+      disabled={!message.trim()}
+    >
+      <SendHorizontal size={16} />
+    </IconButton>
+  </div>
 </form>

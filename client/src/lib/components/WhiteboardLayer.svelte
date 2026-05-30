@@ -78,11 +78,12 @@
 <style>
   .layers {
     width: 200px;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 4px;
-    padding: 0.5rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-xl);
+    padding: 0.6rem;
     font-size: 0.85rem;
+    color: var(--color-linen-dim);
   }
   .header {
     display: flex;
@@ -90,15 +91,20 @@
     align-items: center;
     margin-bottom: 0.5rem;
     font-weight: 600;
+    color: var(--color-linen);
   }
   .header button {
     padding: 0.1rem 0.5rem;
     font-size: 1rem;
     line-height: 1;
     cursor: pointer;
-    border: 1px solid #ccc;
-    background: #fff;
-    border-radius: 4px;
+    border: 1px solid var(--color-line-strong);
+    background: var(--color-elevated);
+    color: var(--color-linen-dim);
+    border-radius: var(--radius-md);
+  }
+  .header button:hover {
+    color: var(--color-copper-bright);
   }
   ul {
     list-style: none;
@@ -113,22 +119,24 @@
     align-items: center;
     gap: 0.25rem;
     padding: 0.2rem;
-    border-radius: 4px;
+    border-radius: var(--radius-md);
   }
   li.active {
-    background: #dbeafe;
+    background: var(--color-copper-soft);
   }
   .row {
     flex: 1;
     text-align: left;
     background: transparent;
     border: none;
+    color: inherit;
     cursor: pointer;
     padding: 0.15rem 0.3rem;
   }
   .icon {
     background: transparent;
     border: none;
+    color: inherit;
     cursor: pointer;
     padding: 0.15rem 0.25rem;
   }

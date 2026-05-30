@@ -58,43 +58,20 @@
   }
 </script>
 
-<div class="collab-editor">
+<div class="flex flex-col gap-2">
   <CollaboratorCursors {peers} />
 
   <textarea
-    class="editor"
+    class="w-full resize-y rounded-2xl border border-line-strong bg-surface p-4 font-mono text-sm leading-relaxed text-linen outline-none transition-colors placeholder:text-linen-muted focus:border-copper"
+    aria-label="Document content"
     value={content}
     oninput={onInput}
     onselect={onSelect}
-    placeholder="Start writing..."
+    placeholder="Start writing…"
     rows="20"
   ></textarea>
 
   {#if saving}
-    <div class="status">Saving...</div>
+    <div class="text-2xs text-linen-muted">Saving…</div>
   {/if}
 </div>
-
-<style>
-  .collab-editor {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .editor {
-    width: 100%;
-    padding: 0.75rem;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 0.95rem;
-    line-height: 1.5;
-    border: 1px solid var(--color-border, #ccc);
-    border-radius: 0.375rem;
-    resize: vertical;
-  }
-
-  .status {
-    font-size: 0.75rem;
-    color: var(--color-muted, #888);
-  }
-</style>

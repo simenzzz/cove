@@ -2,8 +2,18 @@
 <html lang="en">
 	<head>
 		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<meta name="theme-color" content="#16110f" />
+		<meta name="description" content="Cove — a warmer place to gather. Talk, build, and watch together." />
+		<title>Cove</title>
+		<style>
+			/* Paint the warm canvas before app CSS loads to avoid a white flash. */
+			html {
+				background-color: #16110f;
+			}
+		</style>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

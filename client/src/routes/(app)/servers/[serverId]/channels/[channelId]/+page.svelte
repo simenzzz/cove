@@ -9,9 +9,15 @@
   import { fetchChannels } from '$stores/channels';
   import { api } from '$lib/api/client';
   import { addReceivedMessage, type ChatMessage } from '$stores/chat';
+  import { channels } from '$stores/channels';
+  import { recordKey } from '$lib/utils/record-id';
+  import { Hash } from '@lucide/svelte';
 
   const serverId = $derived(page.params.serverId ?? '');
   const channelId = $derived(page.params.channelId ?? '');
+  const channelName = $derived(
+    ($channels.get(serverId) ?? []).find((c) => recordKey(c.id) === channelId)?.name ?? '',
+  );
 
   onMount(async () => {
     if (!serverId || !channelId) return;
@@ -36,9 +42,12 @@
         const msg = raw as Record<string, unknown>;
         const author = msg.author as Record<string, unknown> | undefined;
         const chatMsg: ChatMessage = {
-          id: String(msg.id ?? ''),
+          id: recordKey(msg.id),
           content: String(msg.content ?? ''),
-          authorId: author ? String(author.id ?? '') : '',
+          authorId: author ? recordKey(author.id) : '',
+          authorUsername: author ? String(author.username ?? '') : '',
+          authorDisplayName: author ? String(author.display_name ?? '') : '',
+          authorAvatarUrl: author?.avatar_url == null ? null : String(author.avatar_url),
           channelId,
           createdAt: String(msg.created_at ?? new Date().toISOString()),
           status: 'sent',
@@ -71,8 +80,12 @@
 
 <div class="flex h-full">
   <ChannelList {serverId} />
-  <div class="flex flex-col flex-1">
-    <div class="flex-1 overflow-y-auto p-4">
+  <div class="flex flex-1 flex-col">
+    <header class="flex items-center gap-2 border-b border-line px-5 py-3.5">
+      <Hash size={18} class="text-linen-muted" />
+      <span class="font-display font-semibold text-linen">{channelName || 'Channel'}</span>
+    </header>
+    <div class="flex-1 overflow-y-auto px-3 py-4">
       <MessageList />
     </div>
     <ChatInput {channelId} />

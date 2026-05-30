@@ -1,5 +1,6 @@
 <script lang="ts">
   import { postIdToString, type Post } from '$lib/stores/posts';
+  import { ArrowUpRight } from '@lucide/svelte';
 
   let { post }: { post: Post } = $props();
 
@@ -9,30 +10,22 @@
   }
 </script>
 
-<a href={`/posts/${postIdToString(post)}`} class="card">
-  <h2>{post.title}</h2>
-  <p>{preview(post.published_content)}</p>
+<a
+  href={`/posts/${postIdToString(post)}`}
+  class="group block rounded-2xl border border-line bg-surface p-5 transition-all duration-200 ease-out-soft hover:border-copper/60 hover:shadow-lift"
+>
+  <div class="flex items-start justify-between gap-3">
+    <h2 class="font-display text-lg font-semibold text-linen transition-colors group-hover:text-copper-bright">
+      {post.title}
+    </h2>
+    <ArrowUpRight
+      size={18}
+      class="mt-1 shrink-0 text-linen-muted transition-all duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-copper-bright"
+    />
+  </div>
+  {#if post.published_content}
+    <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-linen-dim line-clamp-3">
+      {preview(post.published_content)}
+    </p>
+  {/if}
 </a>
-
-<style>
-  .card {
-    display: block;
-    padding: 1rem;
-    border: 1px solid var(--color-border, #e5e7eb);
-    border-radius: 0.5rem;
-    text-decoration: none;
-    color: inherit;
-  }
-  .card:hover {
-    background: #f9fafb;
-  }
-  .card h2 {
-    margin: 0 0 0.4rem;
-    font-size: 1.1rem;
-  }
-  .card p {
-    margin: 0;
-    color: #6b7280;
-    white-space: pre-wrap;
-  }
-</style>

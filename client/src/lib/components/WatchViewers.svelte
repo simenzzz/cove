@@ -20,28 +20,28 @@
 </script>
 
 <aside class="viewer-list">
-  <p class="text-xs font-semibold text-gray-400 uppercase mb-2">
+  <p class="mb-2 text-2xs font-semibold uppercase tracking-[0.16em] text-linen-muted">
     Viewers ({viewers.length})
   </p>
   <ul class="space-y-1">
     {#each viewers as v (v.user_id)}
-      <li class="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-700">
-        <span class="flex-1 text-sm text-gray-200">
+      <li class="flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-elevated">
+        <span class="flex-1 truncate text-sm text-linen-dim">
           {v.username}
           {#if v.user_id === currentUserId}
-            <span class="text-xs text-gray-500">(you)</span>
+            <span class="text-xs text-linen-muted">(you)</span>
           {/if}
         </span>
         {#if v.is_leader}
           <span
-            class="text-xs px-1.5 py-0.5 rounded bg-amber-700 text-amber-100"
+            class="rounded-full bg-copper-soft px-1.5 py-0.5 text-xs text-copper-bright"
             title="Room leader"
           >
             ★
           </span>
         {:else if isLeader}
           <button
-            class="text-xs px-1.5 py-0.5 rounded border border-gray-600 hover:bg-gray-700"
+            class="rounded-lg border border-line-strong px-1.5 py-0.5 text-xs text-linen-dim transition-colors hover:bg-elevated hover:text-linen"
             onclick={() => handleTransfer(v.user_id)}
             title="Transfer leadership"
           >
@@ -56,8 +56,8 @@
 <style>
   .viewer-list {
     width: 200px;
-    border-left: 1px solid rgb(55, 65, 81);
-    padding: 0.5rem;
+    border-left: 1px solid var(--color-line);
+    padding: 0.6rem;
     overflow-y: auto;
   }
 </style>

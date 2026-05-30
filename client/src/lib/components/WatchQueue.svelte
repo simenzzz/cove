@@ -62,10 +62,12 @@
 
 <aside class="queue-pane">
   <div class="queue-header">
-    <p class="text-xs font-semibold text-gray-400 uppercase">Queue ({queue.length})</p>
+    <p class="text-2xs font-semibold uppercase tracking-[0.16em] text-linen-muted">
+      Queue ({queue.length})
+    </p>
     {#if isLeader && hasCurrentVideo}
       <button
-        class="text-xs px-2 py-1 rounded border border-gray-600 hover:bg-gray-700"
+        class="rounded-lg border border-line-strong px-2 py-1 text-xs text-linen-dim transition-colors hover:bg-elevated hover:text-linen"
         onclick={() => sendSkip(channelId)}
         title="Skip the current video"
       >
@@ -78,6 +80,7 @@
     <input
       type="text"
       bind:value={urlInput}
+      aria-label="YouTube URL or id"
       placeholder="YouTube URL or id"
       class="add-input"
       required
@@ -85,13 +88,14 @@
     <input
       type="text"
       bind:value={titleInput}
+      aria-label="Video title (optional)"
       placeholder="Title (optional)"
       class="add-input"
     />
     <button type="submit" class="add-button">Add</button>
   </form>
   {#if addError}
-    <p class="text-xs text-red-400 mt-1">{addError}</p>
+    <p class="mt-1 text-xs text-danger">{addError}</p>
   {/if}
 
   <ul class="queue-list">
@@ -150,12 +154,12 @@
 <style>
   .queue-pane {
     width: 320px;
-    border-left: 1px solid rgb(55, 65, 81);
-    padding: 0.75rem;
+    border-left: 1px solid var(--color-line);
+    padding: 0.85rem;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.6rem;
   }
   .queue-header {
     display: flex;
@@ -165,39 +169,45 @@
   .add-form {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 0.25rem;
+    gap: 0.35rem;
   }
   .add-input {
-    background: rgb(31, 41, 55);
-    border: 1px solid rgb(55, 65, 81);
-    border-radius: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    color: rgb(229, 231, 235);
+    background: var(--color-elevated);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-lg);
+    padding: 0.4rem 0.6rem;
+    color: var(--color-linen);
     font-size: 0.85rem;
+  }
+  .add-input:focus {
+    outline: none;
+    border-color: var(--color-copper);
   }
   .add-button {
-    background: rgb(59, 130, 246);
-    color: white;
-    border-radius: 0.25rem;
-    padding: 0.25rem 0.5rem;
+    background: var(--color-copper);
+    color: var(--color-canvas);
+    border-radius: var(--radius-lg);
+    padding: 0.4rem 0.6rem;
     font-size: 0.85rem;
+    font-weight: 600;
   }
   .add-button:hover {
-    background: rgb(37, 99, 235);
+    background: var(--color-copper-bright);
   }
   .queue-list {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 0.5rem;
+    gap: 0.35rem;
+    margin-top: 0.4rem;
   }
   .queue-item {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.25rem;
-    background: rgb(31, 41, 55);
-    border-radius: 0.25rem;
+    padding: 0.4rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
   }
   .queue-item.pending {
     opacity: 0.6;
@@ -206,7 +216,7 @@
     width: 64px;
     height: 36px;
     object-fit: cover;
-    border-radius: 0.125rem;
+    border-radius: var(--radius-sm);
   }
   .meta {
     flex: 1;
@@ -214,43 +224,51 @@
   }
   .title {
     font-size: 0.85rem;
-    color: rgb(229, 231, 235);
+    color: var(--color-linen);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .sub {
     font-size: 0.7rem;
-    color: rgb(156, 163, 175);
+    color: var(--color-linen-muted);
   }
   .actions {
     display: flex;
     flex-direction: column;
-    gap: 0.125rem;
+    gap: 0.15rem;
   }
   .vote-btn,
   .remove-btn {
     background: transparent;
-    color: rgb(156, 163, 175);
-    border: 1px solid rgb(55, 65, 81);
-    border-radius: 0.125rem;
+    color: var(--color-linen-muted);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-sm);
     width: 24px;
     height: 20px;
     font-size: 0.7rem;
     line-height: 1;
     cursor: pointer;
+    transition:
+      background 140ms ease,
+      color 140ms ease;
+  }
+  .vote-btn:hover:not(:disabled),
+  .remove-btn:hover {
+    background: var(--color-elevated);
+    color: var(--color-linen);
   }
   .vote-btn.active {
-    background: rgb(59, 130, 246);
-    color: white;
-    border-color: rgb(59, 130, 246);
+    background: var(--color-copper);
+    color: var(--color-canvas);
+    border-color: var(--color-copper);
   }
   .vote-btn:disabled {
     cursor: not-allowed;
     opacity: 0.5;
   }
   .empty {
-    color: rgb(107, 114, 128);
+    color: var(--color-linen-muted);
     font-size: 0.8rem;
     text-align: center;
     padding: 1rem 0;

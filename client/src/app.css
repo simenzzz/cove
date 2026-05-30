@@ -1,1 +1,244 @@
-@import "tailwindcss";
+/* ===========================================================================
+   Cove — design system foundation
+   Organic-warm-social identity. Warm-dark only. Copper + Teal on warm coal.
+   Display: Bricolage Grotesque · Body/UI: Hanken Grotesk
+   =========================================================================== */
+
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/hanken-grotesk';
+@import 'tailwindcss';
+
+@theme {
+  /* --- Surfaces (warm coal → ember → driftwood) --- */
+  --color-canvas: #16110f; /* app background — warm coal */
+  --color-surface: #221917; /* panels, cards — ember */
+  --color-elevated: #2d2320; /* raised panels, inputs — driftwood */
+  --color-overlay: #0e0a09; /* modal scrim base */
+
+  /* --- Primary: copper --- */
+  --color-copper: #c2693c;
+  --color-copper-bright: #d67e4e; /* hover */
+  --color-copper-deep: #9f5430; /* active / pressed */
+  --color-copper-soft: #3a2620; /* tinted fill behind copper text */
+
+  /* --- Secondary: teal --- */
+  --color-teal: #4e8c84;
+  --color-teal-bright: #63a59c;
+  --color-teal-soft: #1f302e;
+
+  /* --- Text (linen) --- */
+  --color-linen: #efe4da; /* primary text */
+  --color-linen-dim: #c8b8aa; /* secondary text */
+  --color-linen-muted: #9a897b; /* tertiary / placeholder */
+  --color-linen-faint: #6d5e54; /* disabled */
+
+  /* --- Lines --- */
+  --color-line: #34281f; /* subtle divider */
+  --color-line-strong: #483828; /* stronger border / focus ring base */
+
+  /* --- Semantic (kept in the warm key) --- */
+  --color-success: #6aa873;
+  --color-warn: #e0a33d;
+  --color-danger: #cc5640;
+  --color-danger-soft: #3a201b;
+
+  /* --- Typography --- */
+  --font-display: 'Bricolage Grotesque Variable', ui-sans-serif, sans-serif;
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+
+  /* Type scale (fluid-ish, fixed for predictability) */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  /* --- Radius (organic, generous) --- */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-xl: 1.125rem;
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+
+  /* --- Shadows (warm, soft, low-spread) --- */
+  --shadow-soft: 0 1px 2px rgba(8, 5, 4, 0.4), 0 8px 24px -12px rgba(8, 5, 4, 0.6);
+  --shadow-lift: 0 2px 4px rgba(8, 5, 4, 0.45), 0 18px 40px -16px rgba(8, 5, 4, 0.7);
+  --shadow-glow-copper: 0 0 0 1px rgba(194, 105, 60, 0.35), 0 8px 30px -8px rgba(194, 105, 60, 0.45);
+  --shadow-glow-teal: 0 0 0 1px rgba(78, 140, 132, 0.35), 0 8px 30px -8px rgba(78, 140, 132, 0.4);
+
+  /* --- Motion --- */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --animate-fade-up: fade-up 0.55s var(--ease-out-soft) both;
+  --animate-fade-in: fade-in 0.4s var(--ease-out-soft) both;
+  --animate-scale-in: scale-in 0.35s var(--ease-spring) both;
+  --animate-pulse-glow: pulse-glow 2.4s ease-in-out infinite;
+}
+
+/* ---- Keyframes ---- */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(194, 105, 60, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(194, 105, 60, 0);
+  }
+}
+
+/* ===========================================================================
+   Base layer — atmosphere
+   =========================================================================== */
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-linen);
+    font-family: var(--font-sans);
+    font-feature-settings: 'ss01', 'cv01';
+  }
+
+  /* Warm ambient glow + fine grain, fixed behind everything */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(70rem 50rem at 82% -8%, rgba(194, 105, 60, 0.1), transparent 60%),
+      radial-gradient(55rem 45rem at 8% 108%, rgba(78, 140, 132, 0.08), transparent 60%);
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* App content rides above the atmosphere */
+  body > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  ::selection {
+    background-color: rgba(194, 105, 60, 0.35);
+    color: var(--color-linen);
+  }
+
+  /* Headings default to the display face */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  /* Warm, slim scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-line-strong);
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-copper-deep);
+    background-clip: content-box;
+  }
+
+  /* Consistent focus ring */
+  :focus-visible {
+    outline: 2px solid var(--color-copper-bright);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}
+
+/* ===========================================================================
+   Composable utilities
+   =========================================================================== */
+@layer utilities {
+  /* Frosted ember panel used by floating chrome (nav, popovers) */
+  .glass {
+    background-color: color-mix(in oklab, var(--color-surface) 78%, transparent);
+    backdrop-filter: blur(14px) saturate(1.1);
+    -webkit-backdrop-filter: blur(14px) saturate(1.1);
+  }
+
+  /* Staggered reveal helper: add to a parent, children fade-up in order */
+  .stagger > * {
+    animation: fade-up 0.55s var(--ease-out-soft) both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0.04s; }
+  .stagger > *:nth-child(2) { animation-delay: 0.1s; }
+  .stagger > *:nth-child(3) { animation-delay: 0.16s; }
+  .stagger > *:nth-child(4) { animation-delay: 0.22s; }
+  .stagger > *:nth-child(5) { animation-delay: 0.28s; }
+  .stagger > *:nth-child(6) { animation-delay: 0.34s; }
+
+  /* Copper text-gradient for hero wordmarks */
+  .text-ember {
+    background: linear-gradient(135deg, var(--color-copper-bright), var(--color-copper) 55%, var(--color-teal));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}

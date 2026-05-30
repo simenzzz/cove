@@ -38,9 +38,11 @@
 
 <section class="recs">
   <div class="header">
-    <p class="text-xs font-semibold text-gray-400 uppercase">Suggested for this room</p>
+    <p class="text-2xs font-semibold uppercase tracking-[0.16em] text-linen-muted">
+      Suggested for this room
+    </p>
     <button
-      class="text-xs px-1.5 py-0.5 rounded border border-gray-600 hover:bg-gray-700"
+      class="rounded-lg border border-line-strong px-1.5 py-0.5 text-xs text-linen-dim transition-colors hover:bg-elevated hover:text-linen"
       onclick={load}
       disabled={loading}
       title="Refresh recommendations"
@@ -49,11 +51,11 @@
     </button>
   </div>
   {#if loading}
-    <p class="text-xs text-gray-500">Loading…</p>
+    <p class="text-xs text-linen-muted">Loading…</p>
   {:else if error}
-    <p class="text-xs text-red-400">{error}</p>
+    <p class="text-xs text-danger">{error}</p>
   {:else if recommendations.length === 0}
-    <p class="text-xs text-gray-500">
+    <p class="text-xs text-linen-muted">
       Nothing yet — recommendations build up as your server-mates watch things.
     </p>
   {:else}
@@ -83,11 +85,11 @@
 
 <style>
   .recs {
-    padding: 0.75rem;
-    border-top: 1px solid rgb(55, 65, 81);
+    padding: 0.85rem;
+    border-top: 1px solid var(--color-line);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.6rem;
   }
   .header {
     display: flex;
@@ -97,43 +99,45 @@
   .list {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
   }
   .row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: rgb(31, 41, 55);
-    border-radius: 0.25rem;
-    padding: 0.25rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-lg);
+    padding: 0.35rem;
   }
   .thumb {
     width: 48px;
     height: 27px;
     object-fit: cover;
-    border-radius: 0.125rem;
+    border-radius: var(--radius-sm);
   }
   .vid {
     flex: 1;
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 0.75rem;
-    color: rgb(229, 231, 235);
+    color: var(--color-linen);
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .score {
     font-size: 0.7rem;
-    color: rgb(156, 163, 175);
+    color: var(--color-linen-muted);
   }
   .add-btn {
-    background: rgb(59, 130, 246);
-    color: white;
-    border-radius: 0.25rem;
+    background: var(--color-copper);
+    color: var(--color-canvas);
+    border-radius: var(--radius-md);
     padding: 0 0.5rem;
     font-size: 0.85rem;
+    font-weight: 600;
     cursor: pointer;
   }
   .add-btn:hover {
-    background: rgb(37, 99, 235);
+    background: var(--color-copper-bright);
   }
 </style>

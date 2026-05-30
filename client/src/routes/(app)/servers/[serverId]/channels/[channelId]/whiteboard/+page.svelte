@@ -69,14 +69,16 @@
 
 <div class="flex h-full">
   <ChannelList {serverId} />
-  <div class="flex flex-col flex-1 p-4 gap-3 overflow-auto">
+  <div class="flex flex-1 flex-col gap-3 overflow-auto p-5">
     {#if error}
-      <div class="bg-red-100 text-red-800 p-2 rounded text-sm">{error}</div>
+      <div class="rounded-xl border border-danger/40 bg-danger-soft p-2.5 text-sm text-danger">
+        {error}
+      </div>
     {/if}
 
     <DrawingTools />
 
-    <div class="flex gap-3 items-start">
+    <div class="flex items-start gap-3">
       {#if snapshot}
         <Whiteboard
           {channelId}
@@ -84,33 +86,33 @@
           onReady={(p) => (provider = p)}
         />
       {:else}
-        <div class="text-gray-500 text-sm">Loading whiteboard…</div>
+        <div class="text-sm text-linen-muted">Loading whiteboard…</div>
       {/if}
 
       <div class="flex flex-col gap-3">
         <WhiteboardLayer {provider} />
 
-        <div class="checkpoints bg-gray-50 border border-gray-200 rounded p-2 text-sm w-48">
-          <div class="flex justify-between items-center mb-2 font-semibold">
-            <span>Versions</span>
+        <div class="w-48 rounded-xl border border-line bg-surface p-3 text-sm">
+          <div class="mb-2 flex items-center justify-between">
+            <span class="font-display font-semibold text-linen">Versions</span>
             <button
               type="button"
-              class="px-2 py-0.5 bg-blue-600 text-white rounded text-xs disabled:opacity-50"
+              class="rounded-lg bg-copper px-2 py-0.5 text-xs font-semibold text-canvas transition-colors hover:bg-copper-bright disabled:opacity-50"
               onclick={onSaveVersion}
               disabled={busy}
             >
               Save
             </button>
           </div>
-          <ul class="flex flex-col gap-1 max-h-64 overflow-auto">
+          <ul class="flex max-h-64 flex-col gap-1 overflow-auto">
             {#each checkpoints as cp (checkpointIdToString(cp))}
               <li class="flex items-center justify-between gap-2">
-                <span class="truncate" title={cp.label ?? ''}>
+                <span class="truncate text-linen-dim" title={cp.label ?? ''}>
                   {cp.label ?? 'snapshot'}
                 </span>
                 <button
                   type="button"
-                  class="text-xs text-blue-700 hover:underline disabled:opacity-50"
+                  class="text-xs text-copper-bright transition-colors hover:text-copper disabled:opacity-50"
                   onclick={() => onRestore(cp)}
                   disabled={busy}
                 >
@@ -118,7 +120,7 @@
                 </button>
               </li>
             {:else}
-              <li class="text-gray-500 text-xs">No saved versions</li>
+              <li class="text-xs text-linen-muted">No saved versions</li>
             {/each}
           </ul>
         </div>

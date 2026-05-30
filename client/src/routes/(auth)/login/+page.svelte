@@ -1,6 +1,9 @@
 <script lang="ts">
   import { login } from '$stores/auth';
   import { goto } from '$app/navigation';
+  import Button from '$components/ui/Button.svelte';
+  import Input from '$components/ui/Input.svelte';
+  import { AlertCircle } from '@lucide/svelte';
 
   let username = $state('');
   let password = $state('');
@@ -22,42 +25,38 @@
   }
 </script>
 
-<div class="flex items-center justify-center min-h-screen">
-  <div class="w-full max-w-md p-8 bg-gray-800 rounded-lg">
-    <h1 class="text-2xl font-bold mb-6">Login to Nexus</h1>
+<div>
+  <p class="text-2xs font-semibold uppercase tracking-[0.18em] text-copper">Welcome back</p>
+  <h1 class="mt-1.5 font-display text-3xl font-semibold text-linen">Good to see you again</h1>
+  <p class="mt-2 text-sm text-linen-muted">Sign in to drop back into your coves.</p>
 
-    {#if error}
-      <div class="mb-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-200 text-sm">
-        {error}
-      </div>
-    {/if}
+  {#if error}
+    <div
+      class="mt-6 flex items-center gap-2.5 rounded-xl border border-danger/40 bg-danger-soft px-3.5 py-3 text-sm text-danger"
+    >
+      <AlertCircle size={16} class="shrink-0" />
+      <span>{error}</span>
+    </div>
+  {/if}
 
-    <form onsubmit={handleSubmit} class="space-y-4">
-      <input
-        type="text"
-        bind:value={username}
-        placeholder="Username"
-        required
-        class="w-full p-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      />
-      <input
-        type="password"
-        bind:value={password}
-        placeholder="Password"
-        required
-        class="w-full p-3 bg-gray-700 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500"
-      />
-      <button
-        type="submit"
-        disabled={loading}
-        class="w-full p-3 bg-indigo-600 rounded font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50"
-      >
-        {loading ? 'Logging in...' : 'Login'}
-      </button>
-    </form>
-    <p class="mt-4 text-sm text-gray-400">
-      Don't have an account?
-      <a href="/register" class="text-indigo-400 hover:underline">Register</a>
-    </p>
-  </div>
+  <form onsubmit={handleSubmit} class="mt-6 space-y-4">
+    <div class="space-y-1.5">
+      <label for="username" class="text-xs font-medium text-linen-dim">Username</label>
+      <Input id="username" type="text" bind:value={username} placeholder="your-handle" required />
+    </div>
+    <div class="space-y-1.5">
+      <label for="password" class="text-xs font-medium text-linen-dim">Password</label>
+      <Input id="password" type="password" bind:value={password} placeholder="••••••••" required />
+    </div>
+    <Button type="submit" full size="lg" loading={loading}>
+      {loading ? 'Signing in…' : 'Sign in'}
+    </Button>
+  </form>
+
+  <p class="mt-6 text-sm text-linen-muted">
+    New to Cove?
+    <a href="/register" class="font-medium text-copper-bright transition-colors hover:text-copper"
+      >Create an account</a
+    >
+  </p>
 </div>
