@@ -25,6 +25,7 @@ use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+use collab::channel_doc_store::ChannelDocStore;
 use collab::post_store::PostStore;
 use collab::resource::{ResourceKind, ResourceStore};
 use collab::whiteboard_store::WhiteboardStore;
@@ -35,6 +36,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use ws::room_manager::RoomManager;
 use ws::user_connections::UserConnectionRegistry;
+use ws::voice_room_manager::VoiceRoomManager;
 use ws::watch_room_manager::WatchRoomManager;
 
 #[derive(Clone)]
@@ -44,6 +46,7 @@ pub struct AppState {
     pub redis: Pool,
     pub repos: Repos,
     pub room_manager: RoomManager,
+    pub voice_manager: VoiceRoomManager,
     pub watch_manager: WatchRoomManager,
     pub user_connections: UserConnectionRegistry,
     pub collab: CollabManager,
@@ -104,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let repos = Repos::new(db.clone());
     let room_manager = RoomManager::new();
+    let voice_manager = VoiceRoomManager::new();
     let watch_manager = WatchRoomManager::new(repos.watch.clone());
     let user_connections = UserConnectionRegistry::new();
 
@@ -114,6 +118,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     stores.insert(
         ResourceKind::Post,
         Arc::new(PostStore::new(repos.posts.clone())),
+    );
+    stores.insert(
+        ResourceKind::ChannelDoc,
+        Arc::new(ChannelDocStore::new(
+            db.clone(),
+            repos.channels.clone(),
+            repos.servers.clone(),
+        )),
     );
     stores.insert(
         ResourceKind::Whiteboard,
@@ -131,6 +143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         redis: redis_pool,
         repos,
         room_manager,
+        voice_manager,
         watch_manager,
         user_connections,
         collab,
@@ -167,6 +180,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(csrf_protected_auth)
         // User routes
         .route("/api/users/{id}", get(handlers::users::get_user))
+        .route(
+            "/api/users/by-username/{username}",
+            get(handlers::users::get_user_by_username),
+        )
         // Friend routes
         .route("/api/friends", get(handlers::social::list_friends))
         .route(

@@ -7,6 +7,13 @@ interface User {
   displayName: string;
 }
 
+interface ApiUser {
+  id: string;
+  username: string;
+  display_name?: string;
+  displayName?: string;
+}
+
 interface AuthState {
   accessToken: string | null;
   user: User | null;
@@ -25,13 +32,21 @@ export const isAuthenticated = derived(auth, ($auth) => {
   return $auth.accessToken !== null && $auth.user !== null;
 });
 
+function normalizeUser(user: ApiUser): User {
+  return {
+    id: user.id,
+    username: user.username,
+    displayName: user.displayName ?? user.display_name ?? user.username,
+  };
+}
+
 export async function login(username: string, password: string): Promise<void> {
-  const data = await api.post<{ access_token: string; user: User }>(
+  const data = await api.post<{ access_token: string; user: ApiUser }>(
     '/api/auth/login',
     { username, password },
   );
   api.setToken(data.access_token);
-  auth.set({ accessToken: data.access_token, user: data.user, loading: false });
+  auth.set({ accessToken: data.access_token, user: normalizeUser(data.user), loading: false });
 }
 
 export async function register(
@@ -39,12 +54,12 @@ export async function register(
   displayName: string,
   password: string,
 ): Promise<void> {
-  const data = await api.post<{ access_token: string; user: User }>(
+  const data = await api.post<{ access_token: string; user: ApiUser }>(
     '/api/auth/register',
     { username, display_name: displayName, password },
   );
   api.setToken(data.access_token);
-  auth.set({ accessToken: data.access_token, user: data.user, loading: false });
+  auth.set({ accessToken: data.access_token, user: normalizeUser(data.user), loading: false });
 }
 
 export async function logout(): Promise<void> {
@@ -61,8 +76,8 @@ export async function silentRefresh(): Promise<void> {
   const success = await api.silentRefresh();
   if (success && api.getToken()) {
     try {
-      const data = await api.get<{ user: User }>('/api/auth/me');
-      auth.set({ accessToken: api.getToken(), user: data.user, loading: false });
+      const data = await api.get<{ user: ApiUser }>('/api/auth/me');
+      auth.set({ accessToken: api.getToken(), user: normalizeUser(data.user), loading: false });
     } catch {
       api.setToken(null);
       auth.set({ accessToken: null, user: null, loading: false });

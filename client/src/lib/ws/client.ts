@@ -10,6 +10,7 @@ export interface WsMessage {
 }
 
 type MessageHandler = (message: WsMessage) => void;
+type ReadyHandler = () => void;
 
 function websocketUrl(): string {
   const configured = env.PUBLIC_WS_URL?.trim();
@@ -27,6 +28,12 @@ class WebSocketClient {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private shouldReconnect = false;
   private hasConnectedBefore = false;
+  private ready = false;
+  private pending: WsMessage[] = [];
+  private readyHandlers: ReadyHandler[] = [];
+  private connectPromise: Promise<void> | null = null;
+  private resolveConnect: (() => void) | null = null;
+  private rejectConnect: ((reason?: unknown) => void) | null = null;
 
   async connect(): Promise<void> {
     if (!browser) return;
@@ -35,19 +42,32 @@ class WebSocketClient {
       this.ws &&
       (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)
     ) {
-      return;
+      if (this.ready) return;
+      if (this.connectPromise) return this.connectPromise;
     }
+    if (this.connectPromise) return this.connectPromise;
     this.shouldReconnect = true;
 
-    try {
-      const { ticket, nonce } = await api.post<{ ticket: string; nonce: string }>(
-        '/api/auth/ws-ticket'
-      );
-      this.doConnect(ticket, nonce);
-    } catch (err) {
-      console.error('Failed to get WS ticket:', err);
-      this.scheduleReconnect();
-    }
+    this.connectPromise = new Promise<void>((resolve, reject) => {
+      this.resolveConnect = resolve;
+      this.rejectConnect = reject;
+    });
+
+    void (async () => {
+      try {
+        const { ticket, nonce } = await api.post<{ ticket: string; nonce: string }>(
+          '/api/auth/ws-ticket'
+        );
+        this.doConnect(ticket, nonce);
+      } catch (err) {
+        console.error('Failed to get WS ticket:', err);
+        this.rejectConnect?.(err);
+        this.clearConnectPromise();
+        this.scheduleReconnect();
+      }
+    })();
+
+    return this.connectPromise;
   }
 
   private doConnect(ticket: string, nonce: string): void {
@@ -82,7 +102,13 @@ class WebSocketClient {
       }
 
       if (message.type === 'auth_ok') {
+        this.ready = true;
         this.startHeartbeat(message.heartbeat_interval as number);
+        const queued = this.pending.splice(0);
+        for (const msg of queued) this.send(msg);
+        for (const handler of this.readyHandlers) handler();
+        this.resolveConnect?.();
+        this.clearConnectPromise();
         return;
       }
 
@@ -103,7 +129,9 @@ class WebSocketClient {
 
     this.ws.onclose = () => {
       console.log('WebSocket disconnected');
+      this.ready = false;
       this.stopHeartbeat();
+      this.clearConnectPromise();
       if (this.shouldReconnect) {
         this.scheduleReconnect();
       }
@@ -155,7 +183,19 @@ class WebSocketClient {
     };
   }
 
+  onReady(handler: ReadyHandler): () => void {
+    this.readyHandlers = [...this.readyHandlers, handler];
+    if (this.ready) handler();
+    return () => {
+      this.readyHandlers = this.readyHandlers.filter((h) => h !== handler);
+    };
+  }
+
   send(message: WsMessage): void {
+    if (message.type !== 'auth' && !this.ready) {
+      this.pending.push(message);
+      return;
+    }
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
     }
@@ -163,9 +203,17 @@ class WebSocketClient {
 
   disconnect(): void {
     this.shouldReconnect = false;
+    this.ready = false;
+    this.pending = [];
     this.stopHeartbeat();
     this.ws?.close();
     this.ws = null;
+  }
+
+  private clearConnectPromise(): void {
+    this.connectPromise = null;
+    this.resolveConnect = null;
+    this.rejectConnect = null;
   }
 }
 

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 #[cfg(test)]
 use mockall::automock;
 use serde::Serialize;
+use std::collections::HashSet;
 use surrealdb::engine::remote::ws::Client;
 use surrealdb::Surreal;
 
@@ -25,6 +26,7 @@ pub trait ServerRepo: Send + Sync {
     async fn list_for_user(&self, user_id: &str) -> Result<Vec<Server>, AppError>;
     async fn add_member(&self, server_id: &str, user_id: &str) -> Result<(), AppError>;
     async fn is_member(&self, server_id: &str, user_id: &str) -> Result<bool, AppError>;
+    async fn list_member_ids(&self, server_id: &str) -> Result<Vec<String>, AppError>;
     /// Distinct user ids who are members of any server the given user is in
     /// (excluding the user themselves). Used by the presence layer to scope
     /// online/offline broadcasts to users with an actual graph relationship.
@@ -87,6 +89,23 @@ impl ServerRepo for SurrealServerRepo {
             .bind(("server", surrealdb::RecordId::from(("server", server_id))))
             .await?;
         Ok(())
+    }
+
+    async fn list_member_ids(&self, server_id: &str) -> Result<Vec<String>, AppError> {
+        let mut result = self
+            .db
+            .query("SELECT VALUE in FROM member_of WHERE out = $server")
+            .bind(("server", surrealdb::RecordId::from(("server", server_id))))
+            .await?;
+        let members: Vec<surrealdb::RecordId> = result.take(0)?;
+        let mut seen = HashSet::new();
+        Ok(members
+            .into_iter()
+            .filter_map(|id| {
+                let key = id.key().to_string();
+                seen.insert(key.clone()).then_some(key)
+            })
+            .collect())
     }
 
     async fn list_co_member_ids(&self, user_id: &str) -> Result<Vec<String>, AppError> {

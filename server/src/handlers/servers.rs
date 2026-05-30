@@ -47,10 +47,11 @@ pub async fn create_server(
         name: "general".to_string(),
         channel_type: ChannelType::Text,
     };
-    state.repos.channels.create(general, &server_id).await?;
+    let channel = state.repos.channels.create(general, &server_id).await?;
 
     Ok(Json(json!({
         "server": server,
+        "channel": channel,
     })))
 }
 
@@ -92,6 +93,19 @@ pub async fn join_server(
         .ok_or_else(|| AppError::NotFound("Server not found".into()))?;
 
     state.repos.servers.add_member(&id, &claims.sub).await?;
+
+    if let Some(server) = state.repos.servers.find_by_id(&id).await? {
+        state
+            .user_connections
+            .send_to_user(
+                &claims.sub,
+                crate::ws::protocol::ServerMessage::ServerJoined {
+                    server: serde_json::to_value(server).unwrap_or(serde_json::Value::Null),
+                }
+                .to_json(),
+            )
+            .await;
+    }
 
     Ok(Json(json!({ "status": "joined" })))
 }

@@ -115,6 +115,33 @@ pub enum ClientMessage {
         channel_id: String,
         position_ms: i64,
     },
+    // ── Server/channel lifecycle ──
+    ChannelDocSubscribe {
+        channel_id: String,
+    },
+    ChannelDocUnsubscribe {
+        channel_id: String,
+    },
+    ChannelDocUpdate {
+        channel_id: String,
+        update_b64: String,
+    },
+    ChannelDocAwarenessUpdate {
+        channel_id: String,
+        state: serde_json::Value,
+    },
+    // ── Voice signaling (WebRTC mesh) ──
+    VoiceJoin {
+        channel_id: String,
+    },
+    VoiceLeave {
+        channel_id: String,
+    },
+    VoiceSignal {
+        channel_id: String,
+        to_user_id: String,
+        signal: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -297,12 +324,66 @@ pub enum ServerMessage {
         channel_id: String,
         reason: String,
     },
+    ServerJoined {
+        server: serde_json::Value,
+    },
+    ChannelCreated {
+        server_id: String,
+        channel: serde_json::Value,
+    },
+    ChannelDocState {
+        channel_id: String,
+        state_b64: String,
+        state_vector_b64: String,
+    },
+    ChannelDocUpdate {
+        channel_id: String,
+        update_b64: String,
+        from_user: String,
+    },
+    ChannelDocAwarenessState {
+        channel_id: String,
+        users: HashMap<String, serde_json::Value>,
+    },
+    ChannelDocError {
+        channel_id: String,
+        code: String,
+        message: String,
+    },
+    ChannelDocClosed {
+        channel_id: String,
+        reason: String,
+    },
+    VoiceState {
+        channel_id: String,
+        participants: serde_json::Value,
+    },
+    VoiceUserJoined {
+        channel_id: String,
+        user_id: String,
+        username: String,
+    },
+    VoiceUserLeft {
+        channel_id: String,
+        user_id: String,
+    },
+    VoiceSignal {
+        channel_id: String,
+        from_user_id: String,
+        signal: serde_json::Value,
+    },
+    VoiceError {
+        channel_id: String,
+        code: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MessageAuthor {
     pub id: String,
     pub username: String,
+    pub display_name: String,
     pub avatar_url: Option<String>,
 }
 

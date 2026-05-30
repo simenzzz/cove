@@ -458,6 +458,25 @@ pub async fn get_user(
     Ok(Json(json!({ "user": user_to_response(&user) })))
 }
 
+/// Look up a user by exact username. Used to resolve a username to an id
+/// before sending a friend request. The password hash is dropped via the
+/// `UserWithPassword -> User` conversion before serialization.
+pub async fn get_user_by_username(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+    Path(username): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let user_with_pw = state
+        .repos
+        .users
+        .find_by_username(&username)
+        .await?
+        .ok_or_else(|| AppError::NotFound("User not found".into()))?;
+
+    let user: crate::models::user::User = user_with_pw.into();
+    Ok(Json(json!({ "user": user_to_response(&user) })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

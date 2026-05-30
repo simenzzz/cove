@@ -104,13 +104,16 @@ impl SocialRepo for SurrealSocialRepo {
             .query(
                 "UPDATE friends_with SET status = 'accepted' \
                  WHERE in = $from AND out = $to AND status = 'pending' \
-                 RETURN AFTER",
+                 RETURN VALUE id",
             )
             .bind(("from", surrealdb::RecordId::from(("user", from))))
             .bind(("to", surrealdb::RecordId::from(("user", to))))
             .await?;
 
-        let updated: Vec<serde_json::Value> = result.take(0)?;
+        // RETURN VALUE id yields the edge ids as RecordIds, which the SDK can
+        // decode — unlike the full edge record, whose RecordId/Datetime fields
+        // fail to deserialize into serde_json::Value.
+        let updated: Vec<surrealdb::RecordId> = result.take(0)?;
         if updated.is_empty() {
             return Err(AppError::NotFound("No pending friend request found".into()));
         }

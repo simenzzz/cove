@@ -1,4 +1,5 @@
 pub mod awareness;
+pub mod channel_doc_store;
 pub mod doc;
 pub mod post_store;
 pub mod resource;

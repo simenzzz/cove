@@ -6,6 +6,9 @@ import {
 } from '$stores/chat';
 import { setTyping } from '$stores/typing';
 import { presence, type UserStatus } from '$stores/presence';
+import { recordKey } from '$lib/utils/record-id';
+import { addServer, type Server } from '$stores/servers';
+import { addChannel, type Channel } from '$stores/channels';
 
 /**
  * Registers WS message handlers that dispatch to the appropriate stores.
@@ -22,7 +25,10 @@ export function initBridge(): () => void {
         id: msg.message_id as string,
         channelId: msg.channel_id as string,
         content: msg.content as string,
-        authorId: author ? String(author.id ?? '') : '',
+        authorId: author ? recordKey(author.id) : '',
+        authorUsername: author ? String(author.username ?? '') : '',
+        authorDisplayName: author ? String(author.display_name ?? '') : '',
+        authorAvatarUrl: author?.avatar_url == null ? null : String(author.avatar_url),
         seq: msg.seq as number,
         createdAt: new Date(msg.ts as number).toISOString(),
         status: 'sent',
@@ -70,6 +76,21 @@ export function initBridge(): () => void {
   cleanups.push(
     wsClient.on('unread', () => {
       // TODO: Update unread counts store
+    }),
+  );
+
+  cleanups.push(
+    wsClient.on('server_joined', (msg) => {
+      const server = msg.server as Server | undefined;
+      if (server) addServer(server);
+    }),
+  );
+
+  cleanups.push(
+    wsClient.on('channel_created', (msg) => {
+      const serverId = String(msg.server_id ?? '');
+      const channel = msg.channel as Channel | undefined;
+      if (serverId && channel) addChannel(serverId, channel);
     }),
   );
 

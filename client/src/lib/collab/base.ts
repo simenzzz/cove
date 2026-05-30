@@ -116,6 +116,15 @@ export abstract class BaseProvider {
       type: `${cfg.prefix}_subscribe`,
       [cfg.idField]: cfg.id,
     });
+    this.cleanups.push(
+      wsClient.onReady(() => {
+        wsClient.send({
+          v: 1,
+          type: `${cfg.prefix}_subscribe`,
+          [cfg.idField]: cfg.id,
+        });
+      }),
+    );
   }
 
   /**

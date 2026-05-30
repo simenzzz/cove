@@ -40,7 +40,18 @@ pub struct AppConfig {
     pub server_port: u16,
     pub secure_cookies: bool,
     pub cors_origin: String,
+    /// Global per-user (IP-fallback) API request ceiling within
+    /// `api_rate_window_secs`. A generous burst-tolerant backstop — sensitive
+    /// actions (login, register, refresh, friend requests, …) keep their own
+    /// tighter dedicated limiters.
+    pub api_rate_limit: u64,
+    pub api_rate_window_secs: u64,
 }
+
+/// Generous defaults so normal SPA page-load fan-out never trips the limiter,
+/// while a short window means an accidental trip self-heals within seconds.
+const DEFAULT_API_RATE_LIMIT: u64 = 100;
+const DEFAULT_API_RATE_WINDOW_SECS: u64 = 10;
 
 impl AppConfig {
     pub fn from_env() -> Result<Self, AppConfigError> {
@@ -123,6 +134,10 @@ impl AppConfig {
 
         let cors_origin = cors_origin_raw.unwrap_or_else(|_| "http://localhost:3000".to_string());
 
+        let api_rate_limit = optional_positive_u64("API_RATE_LIMIT", DEFAULT_API_RATE_LIMIT)?;
+        let api_rate_window_secs =
+            optional_positive_u64("API_RATE_WINDOW_SECS", DEFAULT_API_RATE_WINDOW_SECS)?;
+
         Ok(Self {
             env,
             surreal_url: require_env("SURREAL_URL")?,
@@ -153,12 +168,31 @@ impl AppConfig {
                     reason: "must be a valid port number".into(),
                 }
             })?,
+            api_rate_limit,
+            api_rate_window_secs,
         })
     }
 }
 
 fn require_env(key: &str) -> Result<String, AppConfigError> {
     std::env::var(key).map_err(|_| AppConfigError::MissingVar(key.into()))
+}
+
+/// Parse an optional env var as a positive (>0) u64, falling back to `default`
+/// when unset/empty. A present-but-invalid value fails fast rather than being
+/// silently ignored.
+fn optional_positive_u64(key: &str, default: u64) -> Result<u64, AppConfigError> {
+    match std::env::var(key) {
+        Err(_) => Ok(default),
+        Ok(raw) if raw.trim().is_empty() => Ok(default),
+        Ok(raw) => match raw.trim().parse::<u64>() {
+            Ok(v) if v > 0 => Ok(v),
+            _ => Err(AppConfigError::InvalidValue {
+                key: key.into(),
+                reason: "must be a positive integer".into(),
+            }),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -188,6 +222,8 @@ mod tests {
             "SERVER_PORT",
             "SECURE_COOKIES",
             "CORS_ORIGIN",
+            "API_RATE_LIMIT",
+            "API_RATE_WINDOW_SECS",
         ] {
             std::env::remove_var(k);
         }
@@ -284,6 +320,44 @@ mod tests {
         );
 
         // Cleanup so we don't pollute other tests.
+        clear_env();
+    }
+
+    #[test]
+    fn api_rate_limit_env_parsing() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // Unset → generous defaults.
+        set_minimum_dev_env();
+        std::env::remove_var("API_RATE_LIMIT");
+        std::env::remove_var("API_RATE_WINDOW_SECS");
+        let cfg = AppConfig::from_env().expect("dev config should load");
+        assert_eq!(cfg.api_rate_limit, DEFAULT_API_RATE_LIMIT);
+        assert_eq!(cfg.api_rate_window_secs, DEFAULT_API_RATE_WINDOW_SECS);
+
+        // Explicit overrides are honored.
+        set_minimum_dev_env();
+        std::env::set_var("API_RATE_LIMIT", "250");
+        std::env::set_var("API_RATE_WINDOW_SECS", "30");
+        let cfg = AppConfig::from_env().expect("override config should load");
+        assert_eq!(cfg.api_rate_limit, 250);
+        assert_eq!(cfg.api_rate_window_secs, 30);
+
+        // Present-but-invalid (zero / non-numeric) fails fast.
+        set_minimum_dev_env();
+        std::env::set_var("API_RATE_LIMIT", "0");
+        let err = AppConfig::from_env().expect_err("zero limit must be rejected");
+        assert!(
+            matches!(err, AppConfigError::InvalidValue { ref key, .. } if key == "API_RATE_LIMIT")
+        );
+
+        set_minimum_dev_env();
+        std::env::set_var("API_RATE_WINDOW_SECS", "abc");
+        let err = AppConfig::from_env().expect_err("non-numeric window must be rejected");
+        assert!(
+            matches!(err, AppConfigError::InvalidValue { ref key, .. } if key == "API_RATE_WINDOW_SECS")
+        );
+
         clear_env();
     }
 }

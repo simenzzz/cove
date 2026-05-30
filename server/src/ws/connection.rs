@@ -17,7 +17,7 @@ use crate::middleware::rate_limit::{
     RateLimitConfig,
 };
 use crate::ws::connection_helpers::{
-    awareness_too_large as awareness_too_large_inner, check_channel_access,
+    awareness_too_large as awareness_too_large_inner, check_channel_type_access,
     check_watch_channel_access, check_watch_queue_rate, compute_presence_audience,
     refresh_audience_if_stale, send_watch_not_subscribed,
 };
@@ -40,11 +40,13 @@ const MAX_WATCH_TITLE_LEN: usize = 200;
 /// connection. The client claims it heartbeats every 30s; anything tighter
 /// than 2s is either a bug or a probe.
 const MIN_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+const MAX_VOICE_SIGNAL_BYTES: usize = 16 * 1024;
 use crate::ws::presence;
 use crate::ws::protocol::{ClientMessage, ServerMessage, SubscriptionLevel};
 use crate::ws::replay;
 use crate::ws::room::RoomCommand;
 use crate::ws::sequence;
+use crate::ws::voice_types::VoiceCommand;
 use crate::ws::watch_types::WatchCommand;
 use crate::AppState;
 
@@ -119,10 +121,10 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         }
     };
 
-    // Fetch user profile for real username/avatar
-    let (username, avatar_url) = match state.repos.users.find_by_id(&user_id).await {
-        Ok(Some(user)) => (user.username, user.avatar_url),
-        _ => (user_id.clone(), None),
+    // Fetch user profile for real display data.
+    let (username, display_name, avatar_url) = match state.repos.users.find_by_id(&user_id).await {
+        Ok(Some(user)) => (user.username, user.display_name, user.avatar_url),
+        _ => (user_id.clone(), user_id.clone(), None),
     };
 
     // Send auth_ok
@@ -199,6 +201,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     let mut subscriptions: HashMap<String, SubscriptionLevel> = HashMap::new();
     let mut collab_subscriptions: HashSet<ResourceRef> = HashSet::new();
     let mut watch_subscriptions: HashSet<String> = HashSet::new();
+    let mut voice_subscriptions: HashSet<String> = HashSet::new();
     let mut last_typing: HashMap<String, std::time::Instant> = HashMap::new();
 
     let heartbeat_timeout = std::time::Duration::from_secs(60);
@@ -312,11 +315,18 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     }
                     ClientMessage::Subscribe { channel_id, level } => {
                         // Authorization: verify user is a member of the channel's server
-                        if !check_channel_access(&state, &channel_id, &user_id).await {
+                        if !check_channel_type_access(
+                            &state,
+                            &channel_id,
+                            &user_id,
+                            crate::models::channel::ChannelType::Text,
+                        )
+                        .await
+                        {
                             let _ = out_tx
                                 .send(
                                     ServerMessage::Error {
-                                        message: "Not a member of this server".into(),
+                                        message: "Not a text channel or not a member".into(),
                                     }
                                     .to_json(),
                                 )
@@ -415,11 +425,30 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             author: crate::ws::protocol::MessageAuthor {
                                 id: user_id.clone(),
                                 username: username.clone(),
+                                display_name: display_name.clone(),
                                 avatar_url: avatar_url.clone(),
                             },
                             content: content.clone(),
                             ts: now_ms,
                         };
+
+                        if let Err(e) = state
+                            .repos
+                            .messages
+                            .create_with_id(&msg_id, content.clone(), &user_id, &channel_id)
+                            .await
+                        {
+                            tracing::error!(error = %e, "Failed to persist message to SurrealDB");
+                            let _ = out_tx
+                                .send(
+                                    ServerMessage::Error {
+                                        message: "Failed to persist message".into(),
+                                    }
+                                    .to_json(),
+                                )
+                                .await;
+                            continue;
+                        }
 
                         let _ = replay::store_message(
                             &state.redis,
@@ -428,27 +457,6 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             &server_msg.to_json(),
                         )
                         .await;
-
-                        // Persist to SurrealDB (fire-and-forget)
-                        let repos = state.repos.clone();
-                        let content_clone = content.clone();
-                        let user_id_clone = user_id.clone();
-                        let channel_id_clone = channel_id.clone();
-                        let msg_id_clone = msg_id.clone();
-                        tokio::spawn(async move {
-                            if let Err(e) = repos
-                                .messages
-                                .create_with_id(
-                                    &msg_id_clone,
-                                    content_clone,
-                                    &user_id_clone,
-                                    &channel_id_clone,
-                                )
-                                .await
-                            {
-                                tracing::error!(error = %e, "Failed to persist message to SurrealDB");
-                            }
-                        });
 
                         // ACK to sender
                         let ack = ServerMessage::MessageAck {
@@ -499,7 +507,14 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     ClientMessage::Resume { last_seq } => {
                         for (channel_id, last) in last_seq {
                             // Authorization check before resuming
-                            if !check_channel_access(&state, &channel_id, &user_id).await {
+                            if !check_channel_type_access(
+                                &state,
+                                &channel_id,
+                                &user_id,
+                                crate::models::channel::ChannelType::Text,
+                            )
+                            .await
+                            {
                                 continue;
                             }
 
@@ -684,6 +699,137 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             continue;
                         }
                         state.collab.update_awareness(&r, &user_id, aw_state).await;
+                    }
+                    ClientMessage::ChannelDocSubscribe { channel_id } => {
+                        if check_rate_limit(
+                            &state.redis,
+                            &RateLimitConfig {
+                                key_prefix: collab_subscribe_key(&user_id),
+                                limit: 10,
+                                window_secs: 1,
+                            },
+                        )
+                        .await
+                        .is_err()
+                        {
+                            continue;
+                        }
+                        let r = ResourceRef::channel_doc(channel_id);
+                        collab_subscriptions.insert(r.clone());
+                        if let Err(e) = state.collab.subscribe(&r, &user_id, out_tx.clone()).await {
+                            CollabManager::send_error(&out_tx, &r, "subscribe_failed", &e).await;
+                        }
+                    }
+                    ClientMessage::ChannelDocUnsubscribe { channel_id } => {
+                        let r = ResourceRef::channel_doc(channel_id);
+                        collab_subscriptions.remove(&r);
+                        state.collab.unsubscribe(&r, &user_id).await;
+                    }
+                    ClientMessage::ChannelDocUpdate {
+                        channel_id,
+                        update_b64,
+                    } => {
+                        let r = ResourceRef::channel_doc(channel_id);
+                        if let Err(e) = state.collab.apply_update(&r, &user_id, &update_b64).await {
+                            CollabManager::send_error(&out_tx, &r, "update_failed", &e).await;
+                        }
+                    }
+                    ClientMessage::ChannelDocAwarenessUpdate {
+                        channel_id,
+                        state: aw_state,
+                    } => {
+                        if awareness_too_large(&aw_state) {
+                            continue;
+                        }
+                        let r = ResourceRef::channel_doc(channel_id);
+                        let rate_key = whiteboard_awareness_key(&user_id, &r.id);
+                        if check_rate_limit(
+                            &state.redis,
+                            &RateLimitConfig {
+                                key_prefix: rate_key,
+                                limit: 2,
+                                window_secs: 1,
+                            },
+                        )
+                        .await
+                        .is_err()
+                        {
+                            continue;
+                        }
+                        state.collab.update_awareness(&r, &user_id, aw_state).await;
+                    }
+                    ClientMessage::VoiceJoin { channel_id } => {
+                        if !check_channel_type_access(
+                            &state,
+                            &channel_id,
+                            &user_id,
+                            crate::models::channel::ChannelType::Voice,
+                        )
+                        .await
+                        {
+                            let _ = out_tx
+                                .send(
+                                    ServerMessage::VoiceError {
+                                        channel_id: channel_id.clone(),
+                                        code: "forbidden".into(),
+                                        message: "Not a voice channel or not a member".into(),
+                                    }
+                                    .to_json(),
+                                )
+                                .await;
+                            continue;
+                        }
+                        let room = state.voice_manager.get_or_create(&channel_id).await;
+                        let _ = room
+                            .send(VoiceCommand::Join {
+                                user_id: user_id.clone(),
+                                username: username.clone(),
+                                sender: out_tx.clone(),
+                            })
+                            .await;
+                        voice_subscriptions.insert(channel_id);
+                    }
+                    ClientMessage::VoiceLeave { channel_id } => {
+                        if let Some(room) = state.voice_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(VoiceCommand::Leave {
+                                    user_id: user_id.clone(),
+                                })
+                                .await;
+                        }
+                        voice_subscriptions.remove(&channel_id);
+                    }
+                    ClientMessage::VoiceSignal {
+                        channel_id,
+                        to_user_id,
+                        signal,
+                    } => {
+                        if !voice_subscriptions.contains(&channel_id) {
+                            let _ = out_tx
+                                .send(
+                                    ServerMessage::VoiceError {
+                                        channel_id,
+                                        code: "not_joined".into(),
+                                        message: "Not in voice room".into(),
+                                    }
+                                    .to_json(),
+                                )
+                                .await;
+                            continue;
+                        }
+                        if awareness_too_large_inner(&signal, MAX_VOICE_SIGNAL_BYTES) {
+                            continue;
+                        }
+                        if let Some(room) = state.voice_manager.get_room(&channel_id).await {
+                            let _ = room
+                                .send(VoiceCommand::Signal {
+                                    from_user: user_id.clone(),
+                                    to_user: to_user_id,
+                                    signal,
+                                    reply_to: out_tx.clone(),
+                                })
+                                .await;
+                        }
                     }
                     // ── Phase 4: watch-together rooms ──
                     ClientMessage::WatchSubscribe { channel_id } => {
@@ -1057,6 +1203,16 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         if let Some(room) = state.watch_manager.get_room(channel_id).await {
             let _ = room
                 .send(WatchCommand::Leave {
+                    user_id: user_id.clone(),
+                })
+                .await;
+        }
+    }
+
+    for channel_id in &voice_subscriptions {
+        if let Some(room) = state.voice_manager.get_room(channel_id).await {
+            let _ = room
+                .send(VoiceCommand::Leave {
                     user_id: user_id.clone(),
                 })
                 .await;

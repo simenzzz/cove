@@ -17,6 +17,7 @@ pub const DEFAULT_PERSIST_DEBOUNCE: Duration = Duration::from_secs(2);
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ResourceKind {
     Post,
+    ChannelDoc,
     Whiteboard,
 }
 
@@ -38,6 +39,13 @@ impl ResourceRef {
     pub fn whiteboard(id: impl Into<String>) -> Self {
         Self {
             kind: ResourceKind::Whiteboard,
+            id: id.into(),
+        }
+    }
+
+    pub fn channel_doc(id: impl Into<String>) -> Self {
+        Self {
+            kind: ResourceKind::ChannelDoc,
             id: id.into(),
         }
     }
@@ -108,6 +116,11 @@ pub(crate) fn state_message(r: &ResourceRef, snap: &Snapshot) -> ServerMessage {
             state_b64: snap.state_b64.clone(),
             state_vector_b64: snap.state_vector_b64.clone(),
         },
+        ResourceKind::ChannelDoc => ServerMessage::ChannelDocState {
+            channel_id: r.id.clone(),
+            state_b64: snap.state_b64.clone(),
+            state_vector_b64: snap.state_vector_b64.clone(),
+        },
         ResourceKind::Whiteboard => ServerMessage::WhiteboardState {
             whiteboard_id: r.id.clone(),
             state_b64: snap.state_b64.clone(),
@@ -127,6 +140,11 @@ pub(crate) fn update_message(
             update_b64,
             from_user,
         },
+        ResourceKind::ChannelDoc => ServerMessage::ChannelDocUpdate {
+            channel_id: r.id.clone(),
+            update_b64,
+            from_user,
+        },
         ResourceKind::Whiteboard => ServerMessage::WhiteboardUpdate {
             whiteboard_id: r.id.clone(),
             update_b64,
@@ -139,6 +157,10 @@ pub(crate) fn awareness_message(r: &ResourceRef, users: HashMap<String, Value>) 
     match r.kind {
         ResourceKind::Post => ServerMessage::AwarenessState {
             post_id: r.id.clone(),
+            users,
+        },
+        ResourceKind::ChannelDoc => ServerMessage::ChannelDocAwarenessState {
+            channel_id: r.id.clone(),
             users,
         },
         ResourceKind::Whiteboard => ServerMessage::WhiteboardAwarenessState {
@@ -155,6 +177,11 @@ pub(crate) fn error_message(r: &ResourceRef, code: String, message: String) -> S
             code,
             message,
         },
+        ResourceKind::ChannelDoc => ServerMessage::ChannelDocError {
+            channel_id: r.id.clone(),
+            code,
+            message,
+        },
         ResourceKind::Whiteboard => ServerMessage::WhiteboardError {
             whiteboard_id: r.id.clone(),
             code,
@@ -167,6 +194,10 @@ pub(crate) fn closed_message(r: &ResourceRef, reason: String) -> ServerMessage {
     match r.kind {
         ResourceKind::Post => ServerMessage::CollabClosed {
             post_id: r.id.clone(),
+            reason,
+        },
+        ResourceKind::ChannelDoc => ServerMessage::ChannelDocClosed {
+            channel_id: r.id.clone(),
             reason,
         },
         ResourceKind::Whiteboard => ServerMessage::WhiteboardClosed {

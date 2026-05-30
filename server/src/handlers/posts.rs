@@ -13,6 +13,10 @@ use crate::repositories::Repos;
 #[derive(Debug, Deserialize)]
 pub struct CreateDraftInput {
     pub title: String,
+    #[serde(default)]
+    pub content: Option<String>,
+    #[serde(default)]
+    pub publish: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -31,11 +35,36 @@ pub async fn create_draft(
             "Title must be 1-200 characters".into(),
         ));
     }
+    let content = input.content.unwrap_or_default();
+    let content = content.trim();
+    if input.publish && content.is_empty() {
+        return Err(AppError::BadRequest(
+            "Content is required to publish".into(),
+        ));
+    }
 
-    let post = repos
+    let mut post = repos
         .posts
         .create_draft(&claims.sub, title.to_string())
         .await?;
+    let post_id = post
+        .id
+        .as_ref()
+        .map(|id| id.key().to_string())
+        .ok_or_else(|| AppError::Internal("Created post is missing id".into()))?;
+
+    if !content.is_empty() {
+        let doc = CollabDoc::from_text(content);
+        repos
+            .posts
+            .save_snapshot(&post_id, doc.encode_state(), doc.encode_state_vector())
+            .await?;
+    }
+
+    if input.publish {
+        post = repos.posts.publish(&post_id, content.to_string()).await?;
+    }
+
     Ok(Json(json!({ "post": post })))
 }
 
@@ -221,6 +250,8 @@ mod tests {
             AuthUser(claims("u1")),
             Json(CreateDraftInput {
                 title: "   ".into(),
+                content: None,
+                publish: false,
             }),
         )
         .await;
@@ -234,6 +265,8 @@ mod tests {
             AuthUser(claims("u1")),
             Json(CreateDraftInput {
                 title: "x".repeat(201),
+                content: None,
+                publish: false,
             }),
         )
         .await;
@@ -253,12 +286,94 @@ mod tests {
             AuthUser(claims("u1")),
             Json(CreateDraftInput {
                 title: "My first post".into(),
+                content: None,
+                publish: false,
             }),
         )
         .await
         .expect("handler should succeed");
 
         assert!(response.0.get("post").is_some());
+    }
+
+    #[tokio::test]
+    async fn create_draft_with_content_persists_initial_snapshot() {
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_create_draft()
+            .with(eq("u1"), eq("My first post".to_string()))
+            .returning(|_, _| Ok(post("p1", "u1", false)));
+        posts
+            .expect_save_snapshot()
+            .withf(|id, state, sv| {
+                id == "p1"
+                    && !state.is_empty()
+                    && !sv.is_empty()
+                    && CollabDoc::from_snapshot(state)
+                        .map(|doc| doc.text() == "Hello world")
+                        .unwrap_or(false)
+            })
+            .returning(|_, _, _| Ok(()));
+
+        let response = create_draft(
+            State(repos(posts)),
+            AuthUser(claims("u1")),
+            Json(CreateDraftInput {
+                title: "My first post".into(),
+                content: Some("Hello world".into()),
+                publish: false,
+            }),
+        )
+        .await
+        .expect("handler should succeed");
+
+        assert_eq!(response.0["post"]["published"], json!(false));
+    }
+
+    #[tokio::test]
+    async fn create_draft_can_publish_immediately() {
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_create_draft()
+            .with(eq("u1"), eq("Launch note".to_string()))
+            .returning(|_, _| Ok(post("p1", "u1", false)));
+        posts
+            .expect_save_snapshot()
+            .withf(|id, state, sv| id == "p1" && !state.is_empty() && !sv.is_empty())
+            .returning(|_, _, _| Ok(()));
+        posts
+            .expect_publish()
+            .with(eq("p1"), eq("Ready to ship".to_string()))
+            .returning(|_, _| Ok(post("p1", "u1", true)));
+
+        let response = create_draft(
+            State(repos(posts)),
+            AuthUser(claims("u1")),
+            Json(CreateDraftInput {
+                title: "Launch note".into(),
+                content: Some("Ready to ship".into()),
+                publish: true,
+            }),
+        )
+        .await
+        .expect("handler should succeed");
+
+        assert_eq!(response.0["post"]["published"], json!(true));
+    }
+
+    #[tokio::test]
+    async fn create_draft_rejects_immediate_publish_without_content() {
+        let result = create_draft(
+            State(repos(MockPostRepo::new())),
+            AuthUser(claims("u1")),
+            Json(CreateDraftInput {
+                title: "Launch note".into(),
+                content: Some("   ".into()),
+                publish: true,
+            }),
+        )
+        .await;
+        assert!(matches!(result, Err(AppError::BadRequest(_))));
     }
 
     #[tokio::test]

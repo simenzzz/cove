@@ -6,7 +6,7 @@ use surrealdb::engine::remote::ws::Client;
 use surrealdb::Surreal;
 
 use crate::error::AppError;
-use crate::models::message::Message;
+use crate::models::message::{Message, MessageWithAuthor};
 
 #[derive(Debug, Serialize)]
 pub struct CreateMessageDb {
@@ -38,7 +38,7 @@ pub trait MessageRepo: Send + Sync {
         channel_id: &str,
         before: Option<String>,
         limit: u32,
-    ) -> Result<Vec<Message>, AppError>;
+    ) -> Result<Vec<MessageWithAuthor>, AppError>;
 }
 
 pub struct SurrealMessageRepo {
@@ -102,15 +102,19 @@ impl MessageRepo for SurrealMessageRepo {
         channel_id: &str,
         before: Option<String>,
         limit: u32,
-    ) -> Result<Vec<Message>, AppError> {
+    ) -> Result<Vec<MessageWithAuthor>, AppError> {
         let query = match before {
             Some(_) => {
-                "SELECT * FROM message WHERE channel = $channel \
+                "SELECT id, content, channel, created_at, edited_at, \
+                 { id: author, username: author.username, display_name: author.display_name, avatar_url: author.avatar_url } AS author \
+                 FROM message WHERE channel = $channel \
                  AND created_at < (SELECT created_at FROM message WHERE id = $before LIMIT 1) \
                  ORDER BY created_at DESC LIMIT $limit"
             }
             None => {
-                "SELECT * FROM message WHERE channel = $channel \
+                "SELECT id, content, channel, created_at, edited_at, \
+                 { id: author, username: author.username, display_name: author.display_name, avatar_url: author.avatar_url } AS author \
+                 FROM message WHERE channel = $channel \
                  ORDER BY created_at DESC LIMIT $limit"
             }
         };
@@ -132,7 +136,7 @@ impl MessageRepo for SurrealMessageRepo {
         }
 
         let mut result = q.await?;
-        let messages: Vec<Message> = result.take(0)?;
+        let messages: Vec<MessageWithAuthor> = result.take(0)?;
         Ok(messages)
     }
 }

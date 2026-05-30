@@ -257,6 +257,11 @@ export function bindWatchRoom(channelId: string): () => void {
   );
 
   wsClient.send({ v: 1, type: 'watch_subscribe', channel_id: channelId });
+  offs.push(
+    wsClient.onReady(() => {
+      wsClient.send({ v: 1, type: 'watch_subscribe', channel_id: channelId });
+    }),
+  );
 
   return () => {
     wsClient.send({ v: 1, type: 'watch_unsubscribe', channel_id: channelId });

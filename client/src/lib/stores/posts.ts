@@ -29,8 +29,24 @@ export function postIdToString(post: Post): string {
   return inner ?? '';
 }
 
-export async function createDraft(title: string): Promise<Post> {
-  const res = await api.post<{ post: Post }>('/api/posts', { title });
+export interface CreatePostInput {
+  title: string;
+  content?: string;
+  publish?: boolean;
+}
+
+export async function createDraft(title: string, content?: string): Promise<Post> {
+  const body: CreatePostInput = { title };
+  if (content?.trim()) body.content = content;
+  const res = await api.post<{ post: Post }>('/api/posts', body);
+  posts.update((state) => ({
+    byId: { ...state.byId, [postIdToString(res.post)]: res.post },
+  }));
+  return res.post;
+}
+
+export async function createPost(input: CreatePostInput): Promise<Post> {
+  const res = await api.post<{ post: Post }>('/api/posts', input);
   posts.update((state) => ({
     byId: { ...state.byId, [postIdToString(res.post)]: res.post },
   }));

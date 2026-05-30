@@ -39,8 +39,8 @@ pub async fn api_rate_limit_middleware(
 
     let config = RateLimitConfig {
         key_prefix: rate_key,
-        limit: 30,
-        window_secs: 60,
+        limit: state.config.api_rate_limit,
+        window_secs: state.config.api_rate_window_secs,
     };
     if let Err(err) = check_rate_limit(&state.redis, &config).await {
         return axum::response::IntoResponse::into_response(err);

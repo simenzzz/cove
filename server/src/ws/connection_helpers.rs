@@ -56,16 +56,19 @@ pub(super) fn awareness_too_large(value: &serde_json::Value, max_bytes: usize) -
     }
 }
 
-/// Check if a user has access to a channel by verifying server membership.
-pub(super) async fn check_channel_access(
+pub(super) async fn check_channel_type_access(
     state: &AppState,
     channel_id: &str,
     user_id: &str,
+    expected: crate::models::channel::ChannelType,
 ) -> bool {
     let channel = match state.repos.channels.find_by_id(channel_id).await {
         Ok(Some(ch)) => ch,
         _ => return false,
     };
+    if channel.channel_type != expected {
+        return false;
+    }
     let server_key = channel.server.key().to_string();
     state
         .repos
@@ -83,21 +86,13 @@ pub(super) async fn check_watch_channel_access(
     channel_id: &str,
     user_id: &str,
 ) -> bool {
-    use crate::models::channel::ChannelType;
-    let channel = match state.repos.channels.find_by_id(channel_id).await {
-        Ok(Some(ch)) => ch,
-        _ => return false,
-    };
-    if channel.channel_type != ChannelType::Watch {
-        return false;
-    }
-    let server_key = channel.server.key().to_string();
-    state
-        .repos
-        .servers
-        .is_member(&server_key, user_id)
-        .await
-        .unwrap_or(false)
+    check_channel_type_access(
+        state,
+        channel_id,
+        user_id,
+        crate::models::channel::ChannelType::Watch,
+    )
+    .await
 }
 
 /// Symmetric "not subscribed" surface for the watch protocol.

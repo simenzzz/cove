@@ -7,6 +7,9 @@ export interface ChatMessage {
   nonce?: string;
   content: string;
   authorId: string;
+  authorUsername?: string;
+  authorDisplayName?: string;
+  authorAvatarUrl?: string | null;
   channelId: string;
   seq?: number;
   createdAt: string;

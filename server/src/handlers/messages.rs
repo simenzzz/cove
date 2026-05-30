@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 
 use crate::auth::middleware::AuthUser;
 use crate::error::AppError;
+use crate::models::channel::ChannelType;
 use crate::repositories::Repos;
 
 #[derive(Debug, Deserialize)]
@@ -26,6 +27,11 @@ pub async fn get_messages(
         .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
 
     let server_key = channel.server.key().to_string();
+    if channel.channel_type != ChannelType::Text {
+        return Err(AppError::BadRequest(
+            "Message history is only available for text channels".into(),
+        ));
+    }
     if !repos.servers.is_member(&server_key, &claims.sub).await? {
         return Err(AppError::Forbidden("Not a member of this server".into()));
     }
@@ -47,7 +53,7 @@ mod tests {
     use super::*;
     use crate::auth::jwt::Claims;
     use crate::models::channel::{Channel, ChannelType};
-    use crate::models::message::Message;
+    use crate::models::message::{MessageAuthor, MessageWithAuthor};
     use crate::repositories::{
         channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
         recommendations::MockRecommendationsRepo, server::MockServerRepo, social::MockSocialRepo,
@@ -76,11 +82,16 @@ mod tests {
         }
     }
 
-    fn message(id: &str, channel_id: &str, content: &str, ts: i64) -> Message {
-        Message {
+    fn message(id: &str, channel_id: &str, content: &str, ts: i64) -> MessageWithAuthor {
+        MessageWithAuthor {
             id: Some(surrealdb::RecordId::from(("message", id))),
             content: content.into(),
-            author: surrealdb::RecordId::from(("user", "u1")),
+            author: MessageAuthor {
+                id: surrealdb::RecordId::from(("user", "u1")),
+                username: "alice".into(),
+                display_name: "Alice Display".into(),
+                avatar_url: None,
+            },
             channel: surrealdb::RecordId::from(("channel", channel_id)),
             created_at: chrono::DateTime::from_timestamp(ts, 0),
             edited_at: None,
@@ -273,6 +284,49 @@ mod tests {
             .collect();
         // Handler should reverse to ASC (oldest first) for display.
         assert_eq!(contents, vec!["first", "second", "third"]);
+    }
+
+    #[tokio::test]
+    async fn get_messages_returns_public_author_display_fields() {
+        let mut channels = MockChannelRepo::new();
+        channels
+            .expect_find_by_id()
+            .returning(|_| Ok(Some(channel("c1", "s1"))));
+
+        let mut servers = MockServerRepo::new();
+        servers.expect_is_member().returning(|_, _| Ok(true));
+
+        let mut messages = MockMessageRepo::new();
+        messages
+            .expect_list_for_channel()
+            .returning(|_, _, _| Ok(vec![message("m1", "c1", "hello", 100)]));
+
+        let response = get_messages(
+            State(repos(channels, servers, messages)),
+            AuthUser(claims("u1")),
+            Path("c1".into()),
+            Query(ListMessagesQuery {
+                before: None,
+                limit: None,
+            }),
+        )
+        .await
+        .expect("handler should succeed");
+
+        let author = response
+            .0
+            .get("messages")
+            .and_then(Value::as_array)
+            .and_then(|messages| messages.first())
+            .and_then(|message| message.get("author"))
+            .and_then(Value::as_object)
+            .expect("public author object");
+
+        assert_eq!(
+            author.get("display_name").and_then(Value::as_str),
+            Some("Alice Display")
+        );
+        assert!(author.get("password_hash").is_none());
     }
 
     #[tokio::test]

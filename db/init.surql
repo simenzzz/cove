@@ -80,19 +80,28 @@ DEFINE TABLE IF NOT EXISTS watch_room SCHEMALESS;
 DEFINE FIELD IF NOT EXISTS channel ON watch_room TYPE record<channel>;
 DEFINE INDEX IF NOT EXISTS watch_room_channel_unique ON watch_room FIELDS channel UNIQUE;
 
-DEFINE TABLE IF NOT EXISTS queue_item SCHEMALESS;
-DEFINE FIELD IF NOT EXISTS room ON queue_item TYPE record<watch_room>;
-DEFINE FIELD IF NOT EXISTS video_id ON queue_item TYPE string
+DEFINE TABLE IF NOT EXISTS watch_queue_item SCHEMALESS;
+DEFINE FIELD IF NOT EXISTS room ON watch_queue_item TYPE record<watch_room>;
+DEFINE FIELD IF NOT EXISTS video_id ON watch_queue_item TYPE string
     ASSERT $value != NONE AND string::len($value) = 11;
 -- string::len counts bytes; the WS boundary in connection.rs caps on chars
 -- to keep the user-visible limit predictable. We give the DB headroom (4 ×
 -- 200 = 800) so a 200-char emoji-heavy title passes — boundary check is the
 -- canonical limit.
-DEFINE FIELD IF NOT EXISTS title ON queue_item TYPE string
+DEFINE FIELD IF NOT EXISTS title ON watch_queue_item TYPE string
     ASSERT string::len($value) <= 800;
-DEFINE FIELD IF NOT EXISTS added_by ON queue_item TYPE record<user>;
-DEFINE FIELD IF NOT EXISTS score ON queue_item TYPE number DEFAULT 0;
-DEFINE INDEX IF NOT EXISTS queue_item_room_idx ON queue_item FIELDS room, score, created_at;
+DEFINE FIELD IF NOT EXISTS duration_ms ON watch_queue_item TYPE number;
+DEFINE FIELD IF NOT EXISTS thumbnail_url ON watch_queue_item TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS added_by ON watch_queue_item TYPE record<user>;
+DEFINE FIELD IF NOT EXISTS score ON watch_queue_item TYPE number DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS position ON watch_queue_item TYPE number;
+DEFINE FIELD IF NOT EXISTS created_at ON watch_queue_item TYPE datetime;
+DEFINE INDEX IF NOT EXISTS watch_queue_item_room_idx ON watch_queue_item FIELDS room, score, created_at;
+
+-- ─── Channel collaborative docs ─────────────────────────────────────────────
+DEFINE TABLE IF NOT EXISTS channel_doc SCHEMALESS;
+DEFINE FIELD IF NOT EXISTS channel ON channel_doc TYPE record<channel>;
+DEFINE INDEX IF NOT EXISTS channel_doc_channel_unique ON channel_doc FIELDS channel UNIQUE;
 
 -- ─── Social graph (edges) ──────────────────────────────────────────────────
 -- All edges are SCHEMALESS so per-edge metadata (status, role, etc.) can be

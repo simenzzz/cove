@@ -1,7 +1,7 @@
 use base64::Engine;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use yrs::{Doc, GetString, ReadTxn, StateVector, Transact, Update};
+use yrs::{Doc, GetString, ReadTxn, StateVector, Text, Transact, Update};
 
 use crate::error::AppError;
 
@@ -30,6 +30,17 @@ impl CollabDoc {
     /// Build an empty document.
     pub fn new() -> Self {
         Self::from_doc(Doc::new())
+    }
+
+    /// Build a document whose canonical post text root starts with `text`.
+    pub fn from_text(text: &str) -> Self {
+        let doc = Doc::new();
+        if !text.is_empty() {
+            let content = doc.get_or_insert_text(TEXT_ROOT);
+            let mut txn = doc.transact_mut();
+            content.insert(&mut txn, 0, text);
+        }
+        Self::from_doc(doc)
     }
 
     /// Hydrate from a previously persisted snapshot using the default cap.
@@ -157,6 +168,14 @@ mod tests {
         let snap = doc.encode_state();
         let restored = CollabDoc::from_snapshot(&snap).unwrap();
         assert_eq!(restored.text(), "");
+    }
+
+    #[test]
+    fn from_text_builds_readable_snapshot() {
+        let doc = CollabDoc::from_text("hello from composer");
+        let restored = CollabDoc::from_snapshot(&doc.encode_state()).unwrap();
+        assert_eq!(restored.text(), "hello from composer");
+        assert!(!doc.encode_state_vector().is_empty());
     }
 
     #[test]
