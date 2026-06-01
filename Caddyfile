@@ -2,10 +2,10 @@
 # upgrade is automatic.
 #
 # Routing:
-#   /api/*          →  Rust backend (nexus-server)
+#   /api/*          →  Rust backend
 #   /ws             →  Rust backend (WebSocket upgrade passes through natively)
 #   /health,/ready  →  Rust backend readiness probes
-#   /               →  SvelteKit SSR (nexus-client)
+#   /               →  SvelteKit SSR client
 
 {
     email {$ACME_EMAIL}

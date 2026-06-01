@@ -1,4 +1,4 @@
-# Nexus — Architecture Overview
+# Cove Architecture Overview
 
 ## System Diagram
 

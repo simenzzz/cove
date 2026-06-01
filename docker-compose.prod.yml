@@ -70,7 +70,7 @@ services:
           cpus: "0.25"
 
   server:
-    image: ${SERVER_IMAGE:-nexus-server:latest}
+    image: ${SERVER_IMAGE:-cove-server:latest}
     restart: always
     ports: !reset []
     environment:
@@ -91,7 +91,7 @@ services:
           cpus: "1.00"
 
   client:
-    image: ${CLIENT_IMAGE:-nexus-client:latest}
+    image: ${CLIENT_IMAGE:-cove-client:latest}
     restart: always
     ports: !reset []
     environment:

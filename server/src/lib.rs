@@ -1,4 +1,4 @@
-//! Nexus server library crate.
+//! Cove server library crate.
 //!
 //! Exposes the application modules plus two builders — [`build_state`] and
 //! [`build_router`] — so both `main.rs` and integration tests can assemble and

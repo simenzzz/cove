@@ -1,4 +1,4 @@
-# Nexus — Complete Roadmap
+# Cove Roadmap
 
 A social media / Discord hybrid focused on **graph data modeling** (SurrealDB), **real-time collaboration** (WebSockets + CRDTs), and **production-grade infrastructure**.
 

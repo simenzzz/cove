@@ -1,4 +1,4 @@
--- Nexus schema bootstrap.
+-- Cove schema bootstrap.
 -- Idempotent: every DEFINE uses IF NOT EXISTS so re-runs on container start
 -- are safe. Tables we want to validate against (auth + edges) are SCHEMAFULL;
 -- payload-heavy tables (Yjs blobs, queue items) are SCHEMALESS so a future

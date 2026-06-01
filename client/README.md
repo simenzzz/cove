@@ -1,42 +1,36 @@
-# sv
+# Cove Client
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit frontend for Cove.
 
-## Creating a project
+## Development
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
+Install dependencies and start the dev server:
 
 ```sh
-# recreate this project
-npx sv@0.13.1 create --template minimal --types ts --no-install client
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+npm install
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+The dev server runs on Vite's default port unless another port is already in
+use.
 
-To create a production version of your app:
+## Checks
 
 ```sh
+npm run check
+npm test
 npm run build
 ```
 
-You can preview the production build with `npm run preview`.
+## Structure
 
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+- `src/routes/(auth)` - login and registration.
+- `src/routes/(app)` - authenticated Cove workspace routes.
+- `src/lib/components` - reusable UI and feature components.
+- `src/lib/stores` - Svelte stores used as the frontend source of truth.
+- `src/lib/ws` - WebSocket client and event bridge.
+- `src/lib/api` - REST client.
+
+The app expects the backend API and WebSocket endpoint from
+`PUBLIC_API_URL` and `PUBLIC_WS_URL`, or same-origin `/api` and `/ws` in
+production.

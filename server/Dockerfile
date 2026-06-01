@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-# Multi-stage build for the Nexus Rust backend. Optimized for layer caching:
+# Multi-stage build for the Cove Rust backend. Optimized for layer caching:
 # manifests + lockfile are copied first, then dependencies are built against a
 # stub binary, then real sources land. Editing app code only invalidates the
 # final `cargo build` layer.

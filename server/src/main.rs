@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{}:{}", state.config.server_host, state.config.server_port);
     let app = build_router(state);
 
-    tracing::info!("Nexus server listening on {addr}");
+    tracing::info!("Cove server listening on {addr}");
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(
         listener,
