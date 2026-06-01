@@ -5,6 +5,7 @@
   import Input from '$components/ui/Input.svelte';
   import { AlertCircle } from '@lucide/svelte';
 
+  let email = $state('');
   let username = $state('');
   let displayName = $state('');
   let password = $state('');
@@ -16,6 +17,14 @@
     e.preventDefault();
     error = '';
 
+    if (!email.includes('@')) {
+      error = 'Please enter a valid email address';
+      return;
+    }
+    if (username.length < 3) {
+      error = 'Username must be at least 3 characters';
+      return;
+    }
     if (password !== confirmPassword) {
       error = 'Passwords do not match';
       return;
@@ -24,14 +33,10 @@
       error = 'Password must be at least 8 characters';
       return;
     }
-    if (username.length < 3) {
-      error = 'Username must be at least 3 characters';
-      return;
-    }
 
     loading = true;
     try {
-      await register(username, displayName || username, password);
+      await register(email, username, displayName || username, password);
       goto('/');
     } catch (err) {
       error = err instanceof Error ? err.message : 'Registration failed';
@@ -44,7 +49,7 @@
 <div>
   <p class="text-2xs font-semibold uppercase tracking-[0.18em] text-copper">Join Cove</p>
   <h1 class="mt-1.5 font-display text-3xl font-semibold text-linen">Make yourself at home</h1>
-  <p class="mt-2 text-sm text-linen-muted">A handle, a password, and you're in.</p>
+  <p class="mt-2 text-sm text-linen-muted">Pick an email, a handle, and a name.</p>
 
   {#if error}
     <div
@@ -57,7 +62,19 @@
 
   <form onsubmit={handleSubmit} class="mt-6 space-y-4">
     <div class="space-y-1.5">
-      <label for="username" class="text-xs font-medium text-linen-dim">Username</label>
+      <label for="email" class="text-xs font-medium text-linen-dim">Email</label>
+      <Input
+        id="email"
+        type="email"
+        bind:value={email}
+        placeholder="you@example.com"
+        required
+      />
+    </div>
+    <div class="space-y-1.5">
+      <label for="username" class="text-xs font-medium text-linen-dim">
+        Username <span class="text-linen-muted font-normal">— your @handle, how others find you</span>
+      </label>
       <Input
         id="username"
         type="text"
@@ -67,7 +84,9 @@
       />
     </div>
     <div class="space-y-1.5">
-      <label for="displayName" class="text-xs font-medium text-linen-dim">Display name</label>
+      <label for="displayName" class="text-xs font-medium text-linen-dim">
+        Display name <span class="text-linen-muted font-normal">— shown in channels and messages</span>
+      </label>
       <Input
         id="displayName"
         type="text"

@@ -11,6 +11,8 @@ export interface Post {
   published_content: string | null;
   created_at: string | null;
   updated_at: string | null;
+  author_username?: string;
+  author_display_name?: string;
 }
 
 interface PostsState {

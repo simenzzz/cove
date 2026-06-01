@@ -18,12 +18,15 @@ DEFINE FIELD IF NOT EXISTS username ON user TYPE string
     ASSERT $value != NONE AND string::len($value) >= 3 AND string::len($value) <= 32;
 DEFINE FIELD IF NOT EXISTS display_name ON user TYPE string
     ASSERT $value != NONE AND string::len($value) <= 64;
+DEFINE FIELD IF NOT EXISTS email ON user TYPE string
+    ASSERT $value != NONE AND string::len($value) >= 5 AND string::len($value) <= 254;
 DEFINE FIELD IF NOT EXISTS avatar_url ON user TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS password_hash ON user TYPE string ASSERT $value != NONE;
 DEFINE FIELD IF NOT EXISTS status ON user TYPE string
     ASSERT $value INSIDE ['online', 'idle', 'dnd', 'offline'];
 DEFINE FIELD IF NOT EXISTS created_at ON user TYPE datetime;
 DEFINE INDEX IF NOT EXISTS user_username_unique ON user FIELDS username UNIQUE;
+DEFINE INDEX IF NOT EXISTS user_email_unique ON user FIELDS email UNIQUE;
 
 -- ─── Servers ───────────────────────────────────────────────────────────────
 DEFINE TABLE IF NOT EXISTS server SCHEMAFULL;
@@ -40,8 +43,8 @@ DEFINE TABLE IF NOT EXISTS channel SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS name ON channel TYPE string
     ASSERT $value != NONE AND string::len($value) >= 1 AND string::len($value) <= 64;
 DEFINE FIELD IF NOT EXISTS channel_type ON channel TYPE string
-    ASSERT $value INSIDE ['text', 'voice', 'collab', 'whiteboard', 'watch'];
-DEFINE FIELD IF NOT EXISTS server ON channel TYPE record<server>;
+    ASSERT $value INSIDE ['text', 'voice', 'collab', 'whiteboard', 'watch', 'direct'];
+DEFINE FIELD IF NOT EXISTS server ON channel TYPE option<record<server>>;
 DEFINE FIELD IF NOT EXISTS created_at ON channel TYPE datetime;
 DEFINE INDEX IF NOT EXISTS channel_server_idx ON channel FIELDS server;
 
@@ -121,6 +124,14 @@ DEFINE INDEX IF NOT EXISTS blocked_out_idx ON blocked FIELDS out;
 DEFINE TABLE IF NOT EXISTS member_of SCHEMALESS;
 DEFINE INDEX IF NOT EXISTS member_of_in_idx ON member_of FIELDS in;
 DEFINE INDEX IF NOT EXISTS member_of_out_idx ON member_of FIELDS out;
+
+DEFINE TABLE IF NOT EXISTS direct_member SCHEMALESS;
+DEFINE INDEX IF NOT EXISTS direct_member_in_idx ON direct_member FIELDS in;
+DEFINE INDEX IF NOT EXISTS direct_member_out_idx ON direct_member FIELDS out;
+
+DEFINE TABLE IF NOT EXISTS direct_visible SCHEMALESS;
+DEFINE INDEX IF NOT EXISTS direct_visible_in_idx ON direct_visible FIELDS in;
+DEFINE INDEX IF NOT EXISTS direct_visible_out_idx ON direct_visible FIELDS out;
 
 DEFINE TABLE IF NOT EXISTS invited_to SCHEMALESS;
 DEFINE INDEX IF NOT EXISTS invited_to_in_idx ON invited_to FIELDS in;

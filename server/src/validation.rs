@@ -17,6 +17,20 @@ pub fn validate_username(username: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+pub fn validate_email(email: &str) -> Result<(), AppError> {
+    if email.len() < 5 || email.len() > 254 {
+        return Err(AppError::BadRequest("Invalid email address".into()));
+    }
+    let at = email
+        .find('@')
+        .ok_or_else(|| AppError::BadRequest("Invalid email address".into()))?;
+    let after_at = &email[at + 1..];
+    if !after_at.contains('.') || after_at.starts_with('.') || after_at.ends_with('.') {
+        return Err(AppError::BadRequest("Invalid email address".into()));
+    }
+    Ok(())
+}
+
 pub fn validate_password(password: &str) -> Result<(), AppError> {
     if password.len() < 8 || password.len() > 128 {
         return Err(AppError::BadRequest(
@@ -54,6 +68,34 @@ mod tests {
     fn username_accepts_underscore_and_alphanumeric() {
         assert!(validate_username("user_123").is_ok());
         assert!(validate_username("ABC_xyz").is_ok());
+    }
+
+    #[test]
+    fn email_rejects_missing_at() {
+        assert!(validate_email("nodomain").is_err());
+        assert!(validate_email("no-at-sign").is_err());
+    }
+
+    #[test]
+    fn email_rejects_no_dot_after_at() {
+        assert!(validate_email("user@nodot").is_err());
+    }
+
+    #[test]
+    fn email_rejects_dot_at_edge_of_domain() {
+        assert!(validate_email("user@.example.com").is_err());
+        assert!(validate_email("user@example.").is_err());
+    }
+
+    #[test]
+    fn email_accepts_valid_addresses() {
+        assert!(validate_email("user@example.com").is_ok());
+        assert!(validate_email("a.b+c@x.co.uk").is_ok());
+    }
+
+    #[test]
+    fn email_rejects_too_short() {
+        assert!(validate_email("a@b").is_err());
     }
 
     #[test]

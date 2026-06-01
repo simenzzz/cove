@@ -6,6 +6,12 @@ use serde_json::{json, Value};
 use crate::auth::middleware::AuthUser;
 use crate::error::AppError;
 use crate::repositories::Repos;
+use crate::ws::protocol::{NotificationUser, ServerMessage};
+use crate::ws::user_connections::UserConnectionRegistry;
+
+fn now_ms() -> u64 {
+    chrono::Utc::now().timestamp_millis().max(0) as u64
+}
 
 // ── Friend requests ──
 
@@ -16,6 +22,7 @@ pub struct FriendRequestInput {
 
 pub async fn send_friend_request(
     State(repos): State<Repos>,
+    State(user_connections): State<UserConnectionRegistry>,
     AuthUser(claims): AuthUser,
     Json(input): Json<FriendRequestInput>,
 ) -> Result<Json<Value>, AppError> {
@@ -23,6 +30,19 @@ pub async fn send_friend_request(
         .social
         .send_friend_request(&claims.sub, &input.user_id)
         .await?;
+
+    if let Some(sender) = repos.users.find_by_id(&claims.sub).await? {
+        user_connections
+            .send_to_user(
+                &input.user_id,
+                ServerMessage::FriendRequestReceived {
+                    from_user: NotificationUser::from(&sender),
+                    ts: now_ms(),
+                }
+                .to_json(),
+            )
+            .await;
+    }
 
     Ok(Json(json!({ "status": "sent" })))
 }
@@ -34,6 +54,7 @@ pub struct AcceptRequestInput {
 
 pub async fn accept_friend_request(
     State(repos): State<Repos>,
+    State(user_connections): State<UserConnectionRegistry>,
     AuthUser(claims): AuthUser,
     Json(input): Json<AcceptRequestInput>,
 ) -> Result<Json<Value>, AppError> {
@@ -41,6 +62,19 @@ pub async fn accept_friend_request(
         .social
         .accept_friend_request(&input.user_id, &claims.sub)
         .await?;
+
+    if let Some(recipient) = repos.users.find_by_id(&claims.sub).await? {
+        user_connections
+            .send_to_user(
+                &input.user_id,
+                ServerMessage::FriendRequestAccepted {
+                    user: NotificationUser::from(&recipient),
+                    ts: now_ms(),
+                }
+                .to_json(),
+            )
+            .await;
+    }
 
     Ok(Json(json!({ "status": "accepted" })))
 }
@@ -145,9 +179,10 @@ mod tests {
     use crate::auth::jwt::Claims;
     use crate::models::user::{User, UserStatus};
     use crate::repositories::{
-        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
-        recommendations::MockRecommendationsRepo, server::MockServerRepo, social::MockSocialRepo,
-        user::MockUserRepo, watch::MockWatchRepo, whiteboard::MockWhiteboardRepo,
+        channel::MockChannelRepo, direct::MockDirectMessageRepo, message::MockMessageRepo,
+        post::MockPostRepo, recommendations::MockRecommendationsRepo, server::MockServerRepo,
+        social::MockSocialRepo, user::MockUserRepo, watch::MockWatchRepo,
+        whiteboard::MockWhiteboardRepo,
     };
     use mockall::predicate::eq;
     use pretty_assertions::assert_eq;
@@ -165,6 +200,7 @@ mod tests {
     fn user(id: &str, username: &str) -> User {
         User {
             id: Some(surrealdb::RecordId::from(("user", id))),
+            email: format!("{username}@test.example.com"),
             username: username.into(),
             display_name: username.into(),
             avatar_url: None,
@@ -174,10 +210,15 @@ mod tests {
     }
 
     fn repos_with_social(social: MockSocialRepo) -> Repos {
+        repos_with_social_and_users(social, MockUserRepo::new())
+    }
+
+    fn repos_with_social_and_users(social: MockSocialRepo, users: MockUserRepo) -> Repos {
         Repos {
-            users: Arc::new(MockUserRepo::new()),
+            users: Arc::new(users),
             servers: Arc::new(MockServerRepo::new()),
             channels: Arc::new(MockChannelRepo::new()),
+            direct_messages: Arc::new(MockDirectMessageRepo::new()),
             messages: Arc::new(MockMessageRepo::new()),
             social: Arc::new(social),
             posts: Arc::new(MockPostRepo::new()),
@@ -203,9 +244,16 @@ mod tests {
             .with(eq("user1"), eq("user2"))
             .times(1)
             .returning(|_, _| Ok(()));
+        let mut users = MockUserRepo::new();
+        users
+            .expect_find_by_id()
+            .with(eq("user1"))
+            .times(1)
+            .returning(|_| Ok(Some(user("user1", "alice"))));
 
         let response = send_friend_request(
-            State(repos_with_social(social)),
+            State(repos_with_social_and_users(social, users)),
+            State(UserConnectionRegistry::new()),
             AuthUser(claims("user1")),
             Json(FriendRequestInput {
                 user_id: "user2".into(),
@@ -228,6 +276,7 @@ mod tests {
 
         let result = send_friend_request(
             State(repos_with_social(social)),
+            State(UserConnectionRegistry::new()),
             AuthUser(claims("user1")),
             Json(FriendRequestInput {
                 user_id: "user1".into(),
@@ -250,9 +299,16 @@ mod tests {
             .with(eq("sender"), eq("recipient"))
             .times(1)
             .returning(|_, _| Ok(()));
+        let mut users = MockUserRepo::new();
+        users
+            .expect_find_by_id()
+            .with(eq("recipient"))
+            .times(1)
+            .returning(|_| Ok(Some(user("recipient", "rec"))));
 
         let response = accept_friend_request(
-            State(repos_with_social(social)),
+            State(repos_with_social_and_users(social, users)),
+            State(UserConnectionRegistry::new()),
             AuthUser(claims("recipient")),
             Json(AcceptRequestInput {
                 user_id: "sender".into(),

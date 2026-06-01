@@ -5,7 +5,7 @@ import { recordKey } from '$lib/utils/record-id';
 export interface Channel {
   id: { id?: string; tb?: string } | string | null;
   name: string;
-  channel_type: 'text' | 'voice' | 'collab' | 'whiteboard' | 'watch';
+  channel_type: 'text' | 'voice' | 'collab' | 'whiteboard' | 'watch' | 'direct';
   server: { id?: string; tb?: string } | string | null;
   created_at?: string | null;
 }

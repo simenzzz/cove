@@ -5,6 +5,7 @@ use surrealdb::RecordId;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: Option<RecordId>,
+    pub email: String,
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
@@ -23,6 +24,7 @@ pub enum UserStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUser {
+    pub email: String,
     pub username: String,
     pub display_name: String,
     pub password: String,

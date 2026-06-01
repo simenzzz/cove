@@ -1,33 +1,14 @@
 <script lang="ts">
+  import { whiteboardPeerCursors } from '$lib/utils/whiteboard-cursors';
+
   /**
    * Overlay rendering peer cursors on top of the canvas. Awareness blobs are
-   * shaped `{ cursor: {x,y}, tool, color }` by the Whiteboard component.
+   * shaped `{ cursor: {x,y}, tool, color, display_name }` by the Whiteboard
+   * component.
    */
   let { peers }: { peers: Record<string, unknown> } = $props();
 
-  interface PeerCursor {
-    userId: string;
-    x: number;
-    y: number;
-    color: string;
-    tool: string;
-  }
-
-  let cursors: PeerCursor[] = $derived(
-    Object.entries(peers).flatMap(([userId, raw]) => {
-      const blob = raw as { cursor?: { x: number; y: number }; color?: string; tool?: string };
-      if (!blob?.cursor) return [];
-      return [
-        {
-          userId,
-          x: blob.cursor.x,
-          y: blob.cursor.y,
-          color: blob.color ?? '#888',
-          tool: blob.tool ?? 'pen',
-        },
-      ];
-    }),
-  );
+  let cursors = $derived(whiteboardPeerCursors(peers));
 </script>
 
 <div class="overlay" aria-hidden="true">
@@ -35,10 +16,10 @@
     <div
       class="cursor"
       style="left:{c.x}px; top:{c.y}px; --c:{c.color}"
-      title={c.userId}
+      title={c.label}
     >
       <span class="dot"></span>
-      <span class="label">{c.userId.slice(0, 8)}</span>
+      <span class="label">{c.label}</span>
     </div>
   {/each}
 </div>

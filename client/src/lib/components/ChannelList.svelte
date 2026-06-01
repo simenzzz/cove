@@ -8,6 +8,7 @@
   import { Hash, Volume2, Feather, Brush, MonitorPlay, Plus, X } from '@lucide/svelte';
   import Button from '$components/ui/Button.svelte';
   import Input from '$components/ui/Input.svelte';
+  import DirectMessageList from '$components/DirectMessageList.svelte';
 
   let { serverId }: { serverId: string } = $props();
 
@@ -143,5 +144,7 @@
     {:else}
       <p class="px-2 py-3 text-sm text-linen-muted">No channels yet.</p>
     {/each}
+
+    <DirectMessageList />
   </div>
 </aside>

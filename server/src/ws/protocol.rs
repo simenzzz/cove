@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::models::user::User;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
@@ -186,6 +188,12 @@ pub enum ServerMessage {
         count: u64,
         last_message_preview: String,
     },
+    DmChannelUpdated {
+        dm: serde_json::Value,
+        last_message_preview: String,
+        from_user: MessageAuthor,
+        ts: u64,
+    },
     Resync {
         channel_id: String,
     },
@@ -331,6 +339,24 @@ pub enum ServerMessage {
         server_id: String,
         channel: serde_json::Value,
     },
+    FriendRequestReceived {
+        from_user: NotificationUser,
+        ts: u64,
+    },
+    FriendRequestAccepted {
+        user: NotificationUser,
+        ts: u64,
+    },
+    ServerMemberJoined {
+        server_id: String,
+        user: NotificationUser,
+        ts: u64,
+    },
+    ServerMemberLeft {
+        server_id: String,
+        user: NotificationUser,
+        ts: u64,
+    },
     ChannelDocState {
         channel_id: String,
         state_b64: String,
@@ -387,6 +413,29 @@ pub struct MessageAuthor {
     pub avatar_url: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationUser {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    pub avatar_url: Option<String>,
+}
+
+impl From<&User> for NotificationUser {
+    fn from(user: &User) -> Self {
+        Self {
+            id: user
+                .id
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default(),
+            username: user.username.clone(),
+            display_name: user.display_name.clone(),
+            avatar_url: user.avatar_url.clone(),
+        }
+    }
+}
+
 impl ServerMessage {
     pub fn to_json(&self) -> String {
         match serde_json::to_value(self) {
@@ -404,5 +453,31 @@ impl ServerMessage {
                 r#"{"type":"error","message":"serialization failure","v":1}"#.to_string()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::user::UserStatus;
+
+    #[test]
+    fn notification_user_omits_email() {
+        let user = User {
+            id: Some(surrealdb::RecordId::from(("user", "u1"))),
+            email: "private@test.example.com".into(),
+            username: "alice".into(),
+            display_name: "Alice".into(),
+            avatar_url: None,
+            status: UserStatus::Online,
+            created_at: None,
+        };
+
+        let value = serde_json::to_value(NotificationUser::from(&user)).expect("serialize");
+        assert!(value.get("email").is_none());
+        assert_eq!(
+            value.get("username").and_then(serde_json::Value::as_str),
+            Some("alice")
+        );
     }
 }

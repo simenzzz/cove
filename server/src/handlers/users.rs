@@ -24,13 +24,14 @@ use std::net::IpAddr;
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
-    pub username: String,
+    pub email: String,
     pub password: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct UserResponse {
     pub id: String,
+    pub email: String,
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
@@ -43,6 +44,7 @@ fn user_to_response(user: &crate::models::user::User) -> UserResponse {
             .as_ref()
             .map(|rid| rid.key().to_string())
             .unwrap_or_default(),
+        email: user.email.clone(),
         username: user.username.clone(),
         display_name: user.display_name.clone(),
         avatar_url: user.avatar_url.clone(),
@@ -225,8 +227,19 @@ pub async fn create_user(
     )
     .await?;
 
+    validation::validate_email(&input.email)?;
     validation::validate_username(&input.username)?;
     validation::validate_password(&input.password)?;
+
+    if state
+        .repos
+        .users
+        .find_by_email(&input.email)
+        .await?
+        .is_some()
+    {
+        return Err(AppError::BadRequest("Email already registered".into()));
+    }
 
     if state
         .repos
@@ -285,7 +298,7 @@ pub async fn login(
     let user_with_pw = state
         .repos
         .users
-        .find_by_username(&input.username)
+        .find_by_email(&input.email)
         .await?
         .ok_or_else(|| AppError::Unauthorized("Invalid credentials".into()))?;
 

@@ -59,3 +59,8 @@ base64 = "0.22"
 mockall = "0.13"
 pretty_assertions = "1"
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+# Integration-test clients: a real HTTP client (with a cookie jar for the
+# refresh/CSRF cookies) and a WebSocket client to drive the live `/ws` endpoint.
+# rustls (not native-tls) avoids a system OpenSSL/pkg-config build dependency.
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "rustls-tls"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake"] }

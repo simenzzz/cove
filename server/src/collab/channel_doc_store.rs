@@ -89,7 +89,10 @@ impl ResourceStore for ChannelDocStore {
             return Err("Not authorized for this channel document".to_string());
         }
 
-        let server_id = channel.server.key().to_string();
+        let Some(server) = channel.server.as_ref() else {
+            return Err("Not authorized for this channel document".to_string());
+        };
+        let server_id = server.key().to_string();
         match self.servers.is_member(&server_id, user_id).await {
             Ok(true) => Ok(()),
             _ => Err("Not authorized for this channel document".to_string()),

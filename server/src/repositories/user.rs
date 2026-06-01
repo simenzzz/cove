@@ -13,6 +13,7 @@ use crate::models::user::{CreateUser, User, UserStatus};
 #[derive(Debug, Deserialize)]
 pub struct UserWithPassword {
     pub id: Option<surrealdb::RecordId>,
+    pub email: String,
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
@@ -25,6 +26,7 @@ impl From<UserWithPassword> for User {
     fn from(u: UserWithPassword) -> Self {
         Self {
             id: u.id,
+            email: u.email,
             username: u.username,
             display_name: u.display_name,
             avatar_url: u.avatar_url,
@@ -36,6 +38,7 @@ impl From<UserWithPassword> for User {
 
 #[derive(Debug, Serialize)]
 pub struct CreateUserDb {
+    pub email: String,
     pub username: String,
     pub display_name: String,
     pub avatar_url: Option<String>,
@@ -50,6 +53,7 @@ pub trait UserRepo: Send + Sync {
     async fn create(&self, input: CreateUser, password_hash: String) -> Result<User, AppError>;
     async fn find_by_id(&self, id: &str) -> Result<Option<User>, AppError>;
     async fn find_by_username(&self, username: &str) -> Result<Option<UserWithPassword>, AppError>;
+    async fn find_by_email(&self, email: &str) -> Result<Option<UserWithPassword>, AppError>;
 }
 
 pub struct SurrealUserRepo {
@@ -69,6 +73,7 @@ impl UserRepo for SurrealUserRepo {
             .db
             .create("user")
             .content(CreateUserDb {
+                email: input.email,
                 username: input.username,
                 display_name: input.display_name,
                 avatar_url: None,
@@ -90,6 +95,16 @@ impl UserRepo for SurrealUserRepo {
             .db
             .query("SELECT * FROM user WHERE username = $username LIMIT 1")
             .bind(("username", username.to_string()))
+            .await?;
+        let user: Option<UserWithPassword> = result.take(0)?;
+        Ok(user)
+    }
+
+    async fn find_by_email(&self, email: &str) -> Result<Option<UserWithPassword>, AppError> {
+        let mut result = self
+            .db
+            .query("SELECT * FROM user WHERE email = $email LIMIT 1")
+            .bind(("email", email.to_lowercase()))
             .await?;
         let user: Option<UserWithPassword> = result.take(0)?;
         Ok(user)

@@ -26,14 +26,34 @@ pub async fn get_messages(
         .await?
         .ok_or_else(|| AppError::NotFound("Channel not found".into()))?;
 
-    let server_key = channel.server.key().to_string();
-    if channel.channel_type != ChannelType::Text {
-        return Err(AppError::BadRequest(
-            "Message history is only available for text channels".into(),
-        ));
-    }
-    if !repos.servers.is_member(&server_key, &claims.sub).await? {
-        return Err(AppError::Forbidden("Not a member of this server".into()));
+    match channel.channel_type {
+        ChannelType::Text => {
+            let server_key = channel
+                .server
+                .as_ref()
+                .ok_or_else(|| AppError::Internal("Text channel missing server".into()))?
+                .key()
+                .to_string();
+            if !repos.servers.is_member(&server_key, &claims.sub).await? {
+                return Err(AppError::Forbidden("Not a member of this server".into()));
+            }
+        }
+        ChannelType::Direct => {
+            if !repos
+                .direct_messages
+                .can_access(&channel_id, &claims.sub, repos.social.as_ref())
+                .await?
+            {
+                return Err(AppError::Forbidden(
+                    "Not a member of this direct message".into(),
+                ));
+            }
+        }
+        _ => {
+            return Err(AppError::BadRequest(
+                "Message history is only available for text channels".into(),
+            ));
+        }
     }
 
     let limit = params.limit.unwrap_or(50).min(100);
@@ -55,9 +75,10 @@ mod tests {
     use crate::models::channel::{Channel, ChannelType};
     use crate::models::message::{MessageAuthor, MessageWithAuthor};
     use crate::repositories::{
-        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
-        recommendations::MockRecommendationsRepo, server::MockServerRepo, social::MockSocialRepo,
-        user::MockUserRepo, watch::MockWatchRepo, whiteboard::MockWhiteboardRepo,
+        channel::MockChannelRepo, direct::MockDirectMessageRepo, message::MockMessageRepo,
+        post::MockPostRepo, recommendations::MockRecommendationsRepo, server::MockServerRepo,
+        social::MockSocialRepo, user::MockUserRepo, watch::MockWatchRepo,
+        whiteboard::MockWhiteboardRepo,
     };
     use mockall::predicate::eq;
     use pretty_assertions::assert_eq;
@@ -77,7 +98,7 @@ mod tests {
             id: Some(surrealdb::RecordId::from(("channel", id))),
             name: "general".into(),
             channel_type: ChannelType::Text,
-            server: surrealdb::RecordId::from(("server", server_id)),
+            server: Some(surrealdb::RecordId::from(("server", server_id))),
             created_at: None,
         }
     }
@@ -107,6 +128,7 @@ mod tests {
             users: Arc::new(MockUserRepo::new()),
             servers: Arc::new(servers),
             channels: Arc::new(channels),
+            direct_messages: Arc::new(MockDirectMessageRepo::new()),
             messages: Arc::new(messages),
             social: Arc::new(MockSocialRepo::new()),
             posts: Arc::new(MockPostRepo::new()),

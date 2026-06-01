@@ -3,12 +3,14 @@ import { api } from '$lib/api/client';
 
 interface User {
   id: string;
+  email: string;
   username: string;
   displayName: string;
 }
 
 interface ApiUser {
   id: string;
+  email: string;
   username: string;
   display_name?: string;
   displayName?: string;
@@ -35,28 +37,30 @@ export const isAuthenticated = derived(auth, ($auth) => {
 function normalizeUser(user: ApiUser): User {
   return {
     id: user.id,
+    email: user.email,
     username: user.username,
     displayName: user.displayName ?? user.display_name ?? user.username,
   };
 }
 
-export async function login(username: string, password: string): Promise<void> {
+export async function login(email: string, password: string): Promise<void> {
   const data = await api.post<{ access_token: string; user: ApiUser }>(
     '/api/auth/login',
-    { username, password },
+    { email, password },
   );
   api.setToken(data.access_token);
   auth.set({ accessToken: data.access_token, user: normalizeUser(data.user), loading: false });
 }
 
 export async function register(
+  email: string,
   username: string,
   displayName: string,
   password: string,
 ): Promise<void> {
   const data = await api.post<{ access_token: string; user: ApiUser }>(
     '/api/auth/register',
-    { username, display_name: displayName, password },
+    { email, username, display_name: displayName, password },
   );
   api.setToken(data.access_token);
   auth.set({ accessToken: data.access_token, user: normalizeUser(data.user), loading: false });

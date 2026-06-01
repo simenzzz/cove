@@ -150,7 +150,12 @@ async fn authorize_member(repos: &Repos, channel_id: &str, user_id: &str) -> Res
         ));
     }
 
-    let server_key = channel.server.key().to_string();
+    let server_key = channel
+        .server
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Whiteboard channel missing server".into()))?
+        .key()
+        .to_string();
     let is_member = repos.servers.is_member(&server_key, user_id).await?;
     if !is_member {
         tracing::debug!(channel_id = %channel_id, user_id = %user_id, "auth: non-member");
@@ -168,9 +173,10 @@ mod tests {
     use crate::models::channel::Channel;
     use crate::models::whiteboard::{Whiteboard, WhiteboardCheckpoint};
     use crate::repositories::{
-        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
-        recommendations::MockRecommendationsRepo, server::MockServerRepo, social::MockSocialRepo,
-        user::MockUserRepo, watch::MockWatchRepo, whiteboard::MockWhiteboardRepo,
+        channel::MockChannelRepo, direct::MockDirectMessageRepo, message::MockMessageRepo,
+        post::MockPostRepo, recommendations::MockRecommendationsRepo, server::MockServerRepo,
+        social::MockSocialRepo, user::MockUserRepo, watch::MockWatchRepo,
+        whiteboard::MockWhiteboardRepo,
     };
     use std::sync::Arc;
 
@@ -188,7 +194,7 @@ mod tests {
             id: Some(surrealdb::RecordId::from(("channel", id))),
             name: "wb".into(),
             channel_type: kind,
-            server: surrealdb::RecordId::from(("server", server_id)),
+            server: Some(surrealdb::RecordId::from(("server", server_id))),
             created_at: None,
         }
     }
@@ -214,6 +220,7 @@ mod tests {
             users: Arc::new(MockUserRepo::new()),
             servers: Arc::new(servers),
             channels: Arc::new(channels),
+            direct_messages: Arc::new(MockDirectMessageRepo::new()),
             messages: Arc::new(MockMessageRepo::new()),
             social: Arc::new(MockSocialRepo::new()),
             posts: Arc::new(MockPostRepo::new()),

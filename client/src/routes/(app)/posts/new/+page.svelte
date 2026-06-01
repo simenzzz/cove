@@ -66,8 +66,11 @@
 </script>
 
 <section class="min-h-full px-4 py-10 sm:px-8">
-  <form class="mx-auto flex w-full max-w-3xl flex-col gap-2" onsubmit={onSubmit}>
-    <p class="mb-1 text-2xs font-semibold uppercase tracking-[0.18em] text-copper">New post</p>
+  <form
+    class="mx-auto flex w-full max-w-3xl flex-col gap-2 rounded-2xl border border-linen/15 bg-linen/[0.92] p-6 text-canvas shadow-lift sm:p-8"
+    onsubmit={onSubmit}
+  >
+    <p class="mb-1 text-2xs font-semibold uppercase tracking-[0.18em] text-copper-deep">New post</p>
 
     <label class="sr-only" for="post-title">Post title</label>
     <input
@@ -77,7 +80,7 @@
       maxlength="200"
       autocomplete="off"
       disabled={submitting}
-      class="w-full border-b border-line-strong bg-transparent pb-3 pt-1 font-display text-4xl font-bold leading-tight text-linen outline-none transition-colors placeholder:text-linen-muted focus:border-copper"
+      class="w-full border-b border-canvas/20 bg-transparent pb-3 pt-1 font-display text-4xl font-bold leading-tight text-canvas outline-none transition-colors placeholder:text-canvas/45 focus:border-copper-deep"
     />
 
     <label class="sr-only" for="post-body">Post body</label>
@@ -87,11 +90,11 @@
       placeholder="Write the update, idea, or announcement…"
       rows="14"
       disabled={submitting}
-      class="min-h-80 w-full resize-y bg-transparent py-2 text-lg leading-relaxed text-linen outline-none placeholder:text-linen-muted"
+      class="min-h-80 w-full resize-y bg-transparent py-2 text-lg leading-relaxed text-canvas outline-none placeholder:text-canvas/45"
     ></textarea>
 
     <div
-      class="flex flex-col items-stretch gap-3 border-t border-line pt-4 transition-all duration-150 sm:flex-row sm:items-center sm:justify-between {hasStarted
+      class="flex flex-col items-stretch gap-3 border-t border-canvas/15 pt-4 transition-all duration-150 sm:flex-row sm:items-center sm:justify-between {hasStarted
         ? 'pointer-events-auto opacity-100'
         : 'pointer-events-none opacity-0'}"
     >
@@ -99,14 +102,20 @@
         {#if error}
           <p class="text-danger">{error}</p>
         {:else if bodyText}
-          <p class="text-linen-muted">{bodyText.length} characters</p>
+          <p class="text-canvas/60">{bodyText.length} characters</p>
         {:else}
-          <p class="text-linen-muted">Drafts can be published from the collaborative editor.</p>
+          <p class="text-canvas/60">Drafts can be published from the collaborative editor.</p>
         {/if}
       </div>
 
       <div class="flex shrink-0 items-center gap-2.5">
-        <Button variant="outline" type="button" disabled={!canSaveDraft} onclick={saveDraft}>
+        <Button
+          variant="outline"
+          type="button"
+          disabled={!canSaveDraft}
+          onclick={saveDraft}
+          class="border-canvas/25 text-canvas hover:border-copper-deep hover:text-copper-deep"
+        >
           {mode === 'draft' ? 'Saving…' : 'Save draft'}
         </Button>
         <Button type="button" disabled={!canPost} onclick={publishNow}>

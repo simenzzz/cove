@@ -192,7 +192,12 @@ async fn authorize_watch_member(
             "Not authorized for this watch room".into(),
         ));
     }
-    let server_key = channel.server.key().to_string();
+    let server_key = channel
+        .server
+        .as_ref()
+        .ok_or_else(|| AppError::Internal("Watch channel missing server".into()))?
+        .key()
+        .to_string();
     let is_member = repos.servers.is_member(&server_key, user_id).await?;
     if !is_member {
         tracing::debug!(channel_id = %channel_id, user_id = %user_id, "watch auth: non-member");

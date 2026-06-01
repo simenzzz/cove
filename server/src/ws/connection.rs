@@ -10,43 +10,23 @@ use tokio::sync::mpsc;
 
 use crate::auth::ws_ticket;
 use crate::collab::resource::ResourceRef;
-use crate::collab::CollabManager;
-use crate::middleware::rate_limit::{
-    check_rate_limit, collab_subscribe_key, message_send_key, watch_playback_control_key,
-    watch_reaction_key, whiteboard_awareness_key, whiteboard_subscribe_key, whiteboard_update_key,
-    RateLimitConfig,
-};
 use crate::ws::connection_helpers::{
     awareness_too_large as awareness_too_large_inner, check_channel_type_access,
-    check_watch_channel_access, check_watch_queue_rate, compute_presence_audience,
-    refresh_audience_if_stale, send_watch_not_subscribed,
+    compute_presence_audience, refresh_audience_if_stale,
 };
-
-fn awareness_too_large(value: &serde_json::Value) -> bool {
-    awareness_too_large_inner(value, MAX_AWARENESS_BYTES)
-}
-
-/// Cap on the serialized JSON size of an awareness blob. The blob is held in
-/// memory per session and broadcast to every peer, so an unbounded blob is a
-/// DoS amplification vector independent of the rate limit. 4 KB is enough for
-/// a cursor + selection + tool color; oversize blobs are rejected.
-const MAX_AWARENESS_BYTES: usize = 4 * 1024;
-
-/// Watch-queue title hard cap. Enforced at the connection boundary so we
-/// fail fast with a typed error instead of silently truncating in the room.
-const MAX_WATCH_TITLE_LEN: usize = 200;
 
 /// Server-side min-interval between successive heartbeats from one
 /// connection. The client claims it heartbeats every 30s; anything tighter
 /// than 2s is either a bug or a probe.
 const MIN_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 const MAX_VOICE_SIGNAL_BYTES: usize = 16 * 1024;
+use crate::ws::chat_handlers;
+use crate::ws::collab_handlers;
 use crate::ws::presence;
 use crate::ws::protocol::{ClientMessage, ServerMessage, SubscriptionLevel};
-use crate::ws::replay;
 use crate::ws::room::RoomCommand;
-use crate::ws::sequence;
 use crate::ws::voice_types::VoiceCommand;
+use crate::ws::watch_handlers;
 use crate::ws::watch_types::WatchCommand;
 use crate::AppState;
 
@@ -314,449 +294,184 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         let _ = out_tx.send(ServerMessage::HeartbeatAck.to_json()).await;
                     }
                     ClientMessage::Subscribe { channel_id, level } => {
-                        // Authorization: verify user is a member of the channel's server
-                        if !check_channel_type_access(
+                        chat_handlers::subscribe(
                             &state,
-                            &channel_id,
+                            &out_tx,
                             &user_id,
-                            crate::models::channel::ChannelType::Text,
+                            &username,
+                            &mut subscriptions,
+                            channel_id,
+                            level,
                         )
-                        .await
-                        {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::Error {
-                                        message: "Not a text channel or not a member".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-
-                        let room = state.room_manager.get_or_create(&channel_id).await;
-                        let _ = room
-                            .send(RoomCommand::Join {
-                                user_id: user_id.clone(),
-                                username: username.clone(),
-                                level: level.clone(),
-                                sender: out_tx.clone(),
-                            })
-                            .await;
-                        subscriptions.insert(channel_id, level);
+                        .await;
                     }
                     ClientMessage::Unsubscribe { channel_id } => {
-                        if let Some(room) = state.room_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(RoomCommand::Leave {
-                                    user_id: user_id.clone(),
-                                })
-                                .await;
-                        }
-                        subscriptions.remove(&channel_id);
+                        chat_handlers::unsubscribe(
+                            &state,
+                            &user_id,
+                            &mut subscriptions,
+                            channel_id,
+                        )
+                        .await;
                     }
                     ClientMessage::ChatMessage {
                         channel_id,
                         content,
                         nonce,
                     } => {
-                        // Authorization: must be subscribed to the channel
-                        if !subscriptions.contains_key(&channel_id) {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::Error {
-                                        message: "Not subscribed to this channel".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-
-                        // Validate content length
-                        if content.is_empty() || content.len() > 4000 {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::Error {
-                                        message: "Message must be 1-4000 characters".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-
-                        // Rate limit: 5 messages per 5 seconds per user per channel
-                        let rate_key = message_send_key(&user_id, &channel_id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 5,
-                                window_secs: 5,
-                            },
-                        )
-                        .await
-                        .is_err()
-                        {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::Error {
-                                        message: "Message rate limited".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-
-                        let seq = match sequence::next_seq(&state.redis, &channel_id).await {
-                            Ok(s) => s,
-                            Err(_) => continue,
-                        };
-
-                        let now_ms = chrono::Utc::now().timestamp_millis() as u64;
-                        let msg_id = uuid::Uuid::new_v4().to_string();
-
-                        let server_msg = ServerMessage::ChatMessage {
-                            seq,
-                            channel_id: channel_id.clone(),
-                            message_id: msg_id.clone(),
-                            author: crate::ws::protocol::MessageAuthor {
-                                id: user_id.clone(),
-                                username: username.clone(),
-                                display_name: display_name.clone(),
-                                avatar_url: avatar_url.clone(),
-                            },
-                            content: content.clone(),
-                            ts: now_ms,
-                        };
-
-                        if let Err(e) = state
-                            .repos
-                            .messages
-                            .create_with_id(&msg_id, content.clone(), &user_id, &channel_id)
-                            .await
-                        {
-                            tracing::error!(error = %e, "Failed to persist message to SurrealDB");
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::Error {
-                                        message: "Failed to persist message".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-
-                        let _ = replay::store_message(
-                            &state.redis,
-                            &channel_id,
-                            seq,
-                            &server_msg.to_json(),
+                        chat_handlers::chat_message(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &username,
+                            &display_name,
+                            &avatar_url,
+                            &subscriptions,
+                            channel_id,
+                            content,
+                            nonce,
                         )
                         .await;
-
-                        // ACK to sender
-                        let ack = ServerMessage::MessageAck {
-                            nonce,
-                            message_id: msg_id,
-                            seq,
-                            ts: now_ms,
-                        };
-                        let _ = out_tx.send(ack.to_json()).await;
-
-                        // Broadcast to room (excluding sender)
-                        if let Some(room) = state.room_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(RoomCommand::Broadcast {
-                                    message: server_msg.to_json(),
-                                    exclude_user: Some(user_id.clone()),
-                                })
-                                .await;
-                        }
                     }
                     ClientMessage::Typing { channel_id } => {
-                        if !subscriptions.contains_key(&channel_id) {
-                            continue;
-                        }
-
-                        let now = std::time::Instant::now();
-                        if let Some(last) = last_typing.get(&channel_id) {
-                            if now.duration_since(*last).as_secs() < 3 {
-                                continue;
-                            }
-                        }
-                        last_typing.insert(channel_id.clone(), now);
-
-                        let typing_msg = ServerMessage::Typing {
-                            channel_id: channel_id.clone(),
-                            user_id: user_id.clone(),
-                            username: username.clone(),
-                        };
-                        if let Some(room) = state.room_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(RoomCommand::Broadcast {
-                                    message: typing_msg.to_json(),
-                                    exclude_user: Some(user_id.clone()),
-                                })
-                                .await;
-                        }
+                        chat_handlers::typing(
+                            &state,
+                            &user_id,
+                            &username,
+                            &subscriptions,
+                            &mut last_typing,
+                            channel_id,
+                        )
+                        .await;
                     }
                     ClientMessage::Resume { last_seq } => {
-                        for (channel_id, last) in last_seq {
-                            // Authorization check before resuming
-                            if !check_channel_type_access(
-                                &state,
-                                &channel_id,
-                                &user_id,
-                                crate::models::channel::ChannelType::Text,
-                            )
-                            .await
-                            {
-                                continue;
-                            }
-
-                            // Re-subscribe to the room
-                            let room = state.room_manager.get_or_create(&channel_id).await;
-                            let _ = room
-                                .send(RoomCommand::Join {
-                                    user_id: user_id.clone(),
-                                    username: username.clone(),
-                                    level: SubscriptionLevel::Active,
-                                    sender: out_tx.clone(),
-                                })
-                                .await;
-                            subscriptions.insert(channel_id.clone(), SubscriptionLevel::Active);
-
-                            // Replay missed messages
-                            match replay::get_missed_messages(&state.redis, &channel_id, last).await
-                            {
-                                Ok(Some(messages)) => {
-                                    for msg in messages {
-                                        let _ = out_tx.send(msg).await;
-                                    }
-                                }
-                                Ok(None) => {
-                                    let resync = ServerMessage::Resync {
-                                        channel_id: channel_id.clone(),
-                                    };
-                                    let _ = out_tx.send(resync.to_json()).await;
-                                }
-                                Err(_) => {}
-                            }
-                        }
+                        chat_handlers::resume(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &username,
+                            &mut subscriptions,
+                            last_seq,
+                        )
+                        .await;
                     }
                     // Phase 2 collab + Phase 3 whiteboard messages: route to
                     // CollabManager via a typed ResourceRef.
                     ClientMessage::CollabSubscribe { post_id } => {
-                        // Rate-limit subscribe churn so the (uncached) authz
-                        // path can't be hammered. 10/sec per user is plenty
-                        // for legitimate page navigation.
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: collab_subscribe_key(&user_id),
-                                limit: 10,
-                                window_secs: 1,
-                            },
+                        collab_handlers::collab_subscribe(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &mut collab_subscriptions,
+                            post_id,
                         )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        let r = ResourceRef::post(post_id);
-                        collab_subscriptions.insert(r.clone());
-                        if let Err(e) = state.collab.subscribe(&r, &user_id, out_tx.clone()).await {
-                            CollabManager::send_error(&out_tx, &r, "subscribe_failed", &e).await;
-                        }
+                        .await;
                     }
                     ClientMessage::CollabUnsubscribe { post_id } => {
-                        let r = ResourceRef::post(post_id);
-                        collab_subscriptions.remove(&r);
-                        state.collab.unsubscribe(&r, &user_id).await;
+                        collab_handlers::collab_unsubscribe(
+                            &state,
+                            &user_id,
+                            &mut collab_subscriptions,
+                            post_id,
+                        )
+                        .await;
                     }
                     ClientMessage::CollabUpdate {
                         post_id,
                         update_b64,
                     } => {
-                        let r = ResourceRef::post(post_id);
-                        if let Err(e) = state.collab.apply_update(&r, &user_id, &update_b64).await {
-                            CollabManager::send_error(&out_tx, &r, "update_failed", &e).await;
-                        }
+                        collab_handlers::collab_update(
+                            &state, &out_tx, &user_id, post_id, update_b64,
+                        )
+                        .await;
                     }
                     ClientMessage::AwarenessUpdate {
                         post_id,
                         state: aw_state,
                     } => {
-                        if awareness_too_large(&aw_state) {
-                            continue;
-                        }
-                        let r = ResourceRef::post(post_id);
-                        let rate_key = whiteboard_awareness_key(&user_id, &r.id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 2,
-                                window_secs: 1,
-                            },
-                        )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        state.collab.update_awareness(&r, &user_id, aw_state).await;
+                        collab_handlers::awareness_update(&state, &user_id, post_id, aw_state)
+                            .await;
                     }
                     ClientMessage::WhiteboardSubscribe { whiteboard_id } => {
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: whiteboard_subscribe_key(&user_id),
-                                limit: 10,
-                                window_secs: 1,
-                            },
+                        collab_handlers::whiteboard_subscribe(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &mut collab_subscriptions,
+                            whiteboard_id,
                         )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        let r = ResourceRef::whiteboard(whiteboard_id);
-                        collab_subscriptions.insert(r.clone());
-                        if let Err(e) = state.collab.subscribe(&r, &user_id, out_tx.clone()).await {
-                            CollabManager::send_error(&out_tx, &r, "subscribe_failed", &e).await;
-                        }
+                        .await;
                     }
                     ClientMessage::WhiteboardUnsubscribe { whiteboard_id } => {
-                        let r = ResourceRef::whiteboard(whiteboard_id);
-                        collab_subscriptions.remove(&r);
-                        state.collab.unsubscribe(&r, &user_id).await;
+                        collab_handlers::whiteboard_unsubscribe(
+                            &state,
+                            &user_id,
+                            &mut collab_subscriptions,
+                            whiteboard_id,
+                        )
+                        .await;
                     }
                     ClientMessage::WhiteboardUpdate {
                         whiteboard_id,
                         update_b64,
                     } => {
-                        let r = ResourceRef::whiteboard(whiteboard_id);
-                        // Rate cap: 30 stroke-updates/sec per user per
-                        // whiteboard. Live drawing must stay smooth; this
-                        // only catches malicious or runaway clients.
-                        let rate_key = whiteboard_update_key(&user_id, &r.id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 30,
-                                window_secs: 1,
-                            },
+                        collab_handlers::whiteboard_update(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            whiteboard_id,
+                            update_b64,
                         )
-                        .await
-                        .is_err()
-                        {
-                            CollabManager::send_error(
-                                &out_tx,
-                                &r,
-                                "rate_limited",
-                                "Too many updates",
-                            )
-                            .await;
-                            continue;
-                        }
-                        if let Err(e) = state.collab.apply_update(&r, &user_id, &update_b64).await {
-                            CollabManager::send_error(&out_tx, &r, "update_failed", &e).await;
-                        }
+                        .await;
                     }
                     ClientMessage::WhiteboardAwarenessUpdate {
                         whiteboard_id,
                         state: aw_state,
                     } => {
-                        // Size cap independent of rate limit — an awareness
-                        // blob is held per-user in memory and amplified to
-                        // every peer on broadcast, so an unbounded JSON
-                        // payload is a DoS amplifier even at 30/sec.
-                        if awareness_too_large(&aw_state) {
-                            continue;
-                        }
-                        let r = ResourceRef::whiteboard(whiteboard_id);
-                        let rate_key = whiteboard_awareness_key(&user_id, &r.id);
-                        // Awareness fan-out is amplified to every peer; cap
-                        // at 2/sec to bound broadcast bandwidth even with the
-                        // size cap, in addition to the per-frame check above.
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 2,
-                                window_secs: 1,
-                            },
+                        collab_handlers::whiteboard_awareness(
+                            &state,
+                            &user_id,
+                            whiteboard_id,
+                            aw_state,
                         )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        state.collab.update_awareness(&r, &user_id, aw_state).await;
+                        .await;
                     }
                     ClientMessage::ChannelDocSubscribe { channel_id } => {
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: collab_subscribe_key(&user_id),
-                                limit: 10,
-                                window_secs: 1,
-                            },
+                        collab_handlers::channel_doc_subscribe(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &mut collab_subscriptions,
+                            channel_id,
                         )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        let r = ResourceRef::channel_doc(channel_id);
-                        collab_subscriptions.insert(r.clone());
-                        if let Err(e) = state.collab.subscribe(&r, &user_id, out_tx.clone()).await {
-                            CollabManager::send_error(&out_tx, &r, "subscribe_failed", &e).await;
-                        }
+                        .await;
                     }
                     ClientMessage::ChannelDocUnsubscribe { channel_id } => {
-                        let r = ResourceRef::channel_doc(channel_id);
-                        collab_subscriptions.remove(&r);
-                        state.collab.unsubscribe(&r, &user_id).await;
+                        collab_handlers::channel_doc_unsubscribe(
+                            &state,
+                            &user_id,
+                            &mut collab_subscriptions,
+                            channel_id,
+                        )
+                        .await;
                     }
                     ClientMessage::ChannelDocUpdate {
                         channel_id,
                         update_b64,
                     } => {
-                        let r = ResourceRef::channel_doc(channel_id);
-                        if let Err(e) = state.collab.apply_update(&r, &user_id, &update_b64).await {
-                            CollabManager::send_error(&out_tx, &r, "update_failed", &e).await;
-                        }
+                        collab_handlers::channel_doc_update(
+                            &state, &out_tx, &user_id, channel_id, update_b64,
+                        )
+                        .await;
                     }
                     ClientMessage::ChannelDocAwarenessUpdate {
                         channel_id,
                         state: aw_state,
                     } => {
-                        if awareness_too_large(&aw_state) {
-                            continue;
-                        }
-                        let r = ResourceRef::channel_doc(channel_id);
-                        let rate_key = whiteboard_awareness_key(&user_id, &r.id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 2,
-                                window_secs: 1,
-                            },
+                        collab_handlers::channel_doc_awareness(
+                            &state, &user_id, channel_id, aw_state,
                         )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        state.collab.update_awareness(&r, &user_id, aw_state).await;
+                        .await;
                     }
                     ClientMessage::VoiceJoin { channel_id } => {
                         if !check_channel_type_access(
@@ -833,66 +548,38 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                     }
                     // ── Phase 4: watch-together rooms ──
                     ClientMessage::WatchSubscribe { channel_id } => {
-                        // Defense in depth: verify the channel is actually a
-                        // Watch channel AND the user is a server member. The
-                        // frontend routes by type, but never trust the client.
-                        if !check_watch_channel_access(&state, &channel_id, &user_id).await {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::WatchError {
-                                        channel_id: channel_id.clone(),
-                                        code: "forbidden".into(),
-                                        message: "Not a watch channel or not a member".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-                        let room = state.watch_manager.get_or_create(&channel_id).await;
-                        let _ = room
-                            .send(WatchCommand::Join {
-                                user_id: user_id.clone(),
-                                username: username.clone(),
-                                sender: out_tx.clone(),
-                            })
-                            .await;
-                        watch_subscriptions.insert(channel_id);
+                        watch_handlers::subscribe(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &username,
+                            &mut watch_subscriptions,
+                            channel_id,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchUnsubscribe { channel_id } => {
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::Leave {
-                                    user_id: user_id.clone(),
-                                })
-                                .await;
-                        }
-                        watch_subscriptions.remove(&channel_id);
+                        watch_handlers::unsubscribe(
+                            &state,
+                            &user_id,
+                            &mut watch_subscriptions,
+                            channel_id,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchTransferLeader {
                         channel_id,
                         to_user_id,
                     } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        // Transfer broadcasts to every viewer, so a leader
-                        // ping-ponging leadership is a fan-out amplifier. Reuse
-                        // the queue-op bucket — it's already keyed per user
-                        // per room and gives 10/min, plenty for legitimate use.
-                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::TransferLeader {
-                                    from_user: user_id.clone(),
-                                    to_user: to_user_id,
-                                    reply_to: out_tx.clone(),
-                                })
-                                .await;
-                        }
+                        watch_handlers::transfer_leader(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                            to_user_id,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchPlayback {
                         channel_id,
@@ -900,47 +587,16 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         position_ms,
                         client_ts: _,
                     } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        // Rate cap: 10/sec per user per room. Leader is one
-                        // user so this is a per-leader cap. Defense against
-                        // a runaway client looping seek events.
-                        let rate_key = watch_playback_control_key(&user_id, &channel_id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 10,
-                                window_secs: 1,
-                            },
+                        watch_handlers::playback(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                            action,
+                            position_ms,
                         )
-                        .await
-                        .is_err()
-                        {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::WatchError {
-                                        channel_id,
-                                        code: "rate_limited".into(),
-                                        message: "Playback control rate limited".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::PlaybackControl {
-                                    from_user: user_id.clone(),
-                                    action,
-                                    position_ms,
-                                    reply_to: out_tx.clone(),
-                                })
-                                .await;
-                        }
+                        .await;
                     }
                     ClientMessage::WatchQueueAdd {
                         channel_id,
@@ -950,180 +606,85 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         thumbnail_url,
                         nonce,
                     } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        if title.chars().count() > MAX_WATCH_TITLE_LEN {
-                            let err = ServerMessage::WatchError {
-                                channel_id: channel_id.clone(),
-                                code: "TITLE_TOO_LONG".into(),
-                                message: format!("title exceeds {MAX_WATCH_TITLE_LEN} characters"),
-                            }
-                            .to_json();
-                            let _ = out_tx.send(err).await;
-                            continue;
-                        }
-                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::QueueAdd {
-                                    from_user: user_id.clone(),
-                                    video_id,
-                                    title,
-                                    duration_ms,
-                                    thumbnail_url,
-                                    nonce,
-                                    reply_to: out_tx.clone(),
-                                })
-                                .await;
-                        }
+                        watch_handlers::queue_add(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                            video_id,
+                            title,
+                            duration_ms,
+                            thumbnail_url,
+                            nonce,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchQueueRemove {
                         channel_id,
                         item_id,
                     } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::QueueRemove {
-                                    from_user: user_id.clone(),
-                                    item_id,
-                                    reply_to: out_tx.clone(),
-                                })
-                                .await;
-                        }
+                        watch_handlers::queue_remove(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                            item_id,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchVote {
                         channel_id,
                         item_id,
                         value,
                     } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::Vote {
-                                    from_user: user_id.clone(),
-                                    item_id,
-                                    value,
-                                    reply_to: out_tx.clone(),
-                                })
-                                .await;
-                        }
+                        watch_handlers::vote(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                            item_id,
+                            value,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchSkip { channel_id } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        if !check_watch_queue_rate(&state, &user_id, &channel_id, &out_tx).await {
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::Skip {
-                                    from_user: user_id.clone(),
-                                    reply_to: out_tx.clone(),
-                                })
-                                .await;
-                        }
+                        watch_handlers::skip(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                        )
+                        .await;
                     }
                     ClientMessage::WatchReaction { channel_id, emoji } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        // Reject empty or oversized payloads — emojis can be
-                        // multi-codepoint (e.g. flag sequences) so we allow
-                        // up to 32 bytes, plenty for any single emoji.
-                        let trimmed = emoji.trim();
-                        if trimmed.is_empty() || trimmed.len() > 32 {
-                            continue;
-                        }
-                        let rate_key = watch_reaction_key(&user_id, &channel_id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 5,
-                                window_secs: 1,
-                            },
+                        watch_handlers::reaction(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &username,
+                            &watch_subscriptions,
+                            channel_id,
+                            emoji,
                         )
-                        .await
-                        .is_err()
-                        {
-                            let _ = out_tx
-                                .send(
-                                    ServerMessage::WatchError {
-                                        channel_id,
-                                        code: "rate_limited".into(),
-                                        message: "Reaction rate limited".into(),
-                                    }
-                                    .to_json(),
-                                )
-                                .await;
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::Reaction {
-                                    from_user: user_id.clone(),
-                                    username: username.clone(),
-                                    emoji: trimmed.to_string(),
-                                })
-                                .await;
-                        }
+                        .await;
                     }
                     ClientMessage::WatchProgress {
                         channel_id,
                         position_ms,
                     } => {
-                        if !watch_subscriptions.contains(&channel_id) {
-                            send_watch_not_subscribed(&out_tx, &channel_id).await;
-                            continue;
-                        }
-                        // Defense-in-depth cap on the progress stream. The
-                        // leader's client emits ~once every 5s; a hostile or
-                        // bugged leader spamming faster would still be
-                        // bounded by the actor's `current_recorded` one-shot
-                        // gate, but rate-limiting also protects the per-op
-                        // `Progress` mailbox slot from saturation.
-                        let rate_key = watch_playback_control_key(&user_id, &channel_id);
-                        if check_rate_limit(
-                            &state.redis,
-                            &RateLimitConfig {
-                                key_prefix: rate_key,
-                                limit: 10,
-                                window_secs: 1,
-                            },
+                        watch_handlers::progress(
+                            &state,
+                            &out_tx,
+                            &user_id,
+                            &watch_subscriptions,
+                            channel_id,
+                            position_ms,
                         )
-                        .await
-                        .is_err()
-                        {
-                            continue;
-                        }
-                        if let Some(room) = state.watch_manager.get_room(&channel_id).await {
-                            let _ = room
-                                .send(WatchCommand::Progress {
-                                    from_user: user_id.clone(),
-                                    position_ms,
-                                })
-                                .await;
-                        }
+                        .await;
                     }
                 }
             }

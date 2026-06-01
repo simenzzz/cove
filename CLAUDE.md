@@ -22,6 +22,14 @@ roadmaps/        # Phased roadmap (nexus.md — Phases 0-4)
 ProjectDocs/     # Architecture decisions, protocol specs, risk analysis
 ```
 
+## Development Phase
+
+Nexus is still in active development. Make changes with that in mind: prefer
+updating bootstrap/source-of-truth files directly over adding production-style
+migration or compatibility layers. For database schema changes, update
+`db/init.surql` unless the user explicitly asks for a migration script or
+production rollout path.
+
 ## Rust Conventions
 
 ### Error Handling
@@ -112,6 +120,30 @@ cd client && npm install && npm run dev
 - **Frontend**: Vitest for unit tests, Playwright for E2E
 - **Target**: 80% coverage minimum
 - **TDD workflow**: write test (RED) → implement (GREEN) → refactor (IMPROVE)
+
+### Ephemeral Test Resource Cleanup (MANDATORY)
+
+Any temporary resource spun up to run a test or reproduce a bug **must be torn
+down before the task is reported complete** — never leave it running for the
+user to discover. This includes, at minimum:
+
+- **Docker containers** (e.g. ad-hoc `nexus-test-redis`, `nexus-test-surreal`
+  on ports 6379 / 8000 / 3001). Leaving these up collides with the user's own
+  `docker compose up`.
+- **Background processes** (dev servers, `cargo run`, `npm run dev`, watchers).
+- **Temp files/dirs** and scratch artifacts written outside the repo's tracked
+  paths.
+
+Rules:
+- Prefer ephemeral flags so cleanup is automatic even on failure
+  (`docker run --rm`, `mktemp`, trap-based teardown).
+- If a resource can't be `--rm`'d, explicitly remove it in the **same turn**
+  once tests pass (`docker rm -f <name>`), and verify the port/resource is
+  freed before reporting done.
+- If a resource is intentionally left running (e.g. the user will re-run
+  tests), say so explicitly and provide the exact teardown command.
+- Don't bind temp services to the project's standard ports if a fixed,
+  non-conflicting port will do.
 
 ## Architectural Decisions
 

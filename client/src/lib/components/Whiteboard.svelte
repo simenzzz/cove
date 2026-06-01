@@ -12,6 +12,7 @@
     toolState,
     type ToolKind,
   } from '$lib/stores/whiteboards';
+  import { auth } from '$stores/auth';
   import WhiteboardCursors from './WhiteboardCursors.svelte';
 
   let {
@@ -467,7 +468,13 @@
     const now = performance.now();
     if (now - lastAwarenessAt < 35) return;
     lastAwarenessAt = now;
-    provider?.sendAwareness({ cursor: p, tool, color });
+    provider?.sendAwareness({
+      cursor: p,
+      tool,
+      color,
+      display_name: $auth.user?.displayName,
+      username: $auth.user?.username,
+    });
   }
 
   function base64ToBytes(b64: string): Uint8Array {

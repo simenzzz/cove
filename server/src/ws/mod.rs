@@ -1,3 +1,5 @@
+pub mod chat_handlers;
+pub mod collab_handlers;
 pub mod connection;
 mod connection_helpers;
 pub mod presence;
@@ -10,6 +12,7 @@ pub mod user_connections;
 pub mod voice_room;
 pub mod voice_room_manager;
 pub mod voice_types;
+pub mod watch_handlers;
 pub mod watch_room;
 mod watch_room_helpers;
 pub mod watch_room_manager;

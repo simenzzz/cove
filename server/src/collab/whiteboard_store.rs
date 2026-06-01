@@ -128,7 +128,10 @@ impl ResourceStore for WhiteboardStore {
             return Err("Channel is not a whiteboard".into());
         }
 
-        let server_key = channel.server.key().to_string();
+        let Some(server) = channel.server.as_ref() else {
+            return Err("Not a member of this server".into());
+        };
+        let server_key = server.key().to_string();
         let is_member = self
             .servers
             .is_member(&server_key, user_id)
@@ -173,7 +176,7 @@ mod tests {
             id: Some(surrealdb::RecordId::from(("channel", id))),
             name: "wb".into(),
             channel_type: kind,
-            server: surrealdb::RecordId::from(("server", server_id)),
+            server: Some(surrealdb::RecordId::from(("server", server_id))),
             created_at: None,
         }
     }

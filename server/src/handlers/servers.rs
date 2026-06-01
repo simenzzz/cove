@@ -6,12 +6,17 @@ use crate::auth::middleware::AuthUser;
 use crate::error::AppError;
 use crate::models::channel::{ChannelType, CreateChannel};
 use crate::models::server::CreateServer;
+use crate::ws::protocol::{NotificationUser, ServerMessage};
 use crate::AppState;
 
 /// Extract the key portion from a SurrealDB RecordId string ("table:key" → "key")
 fn extract_record_key(record_id: &surrealdb::RecordId) -> String {
     let s = record_id.to_string();
     s.split_once(':').map(|(_, k)| k.to_string()).unwrap_or(s)
+}
+
+fn now_ms() -> u64 {
+    chrono::Utc::now().timestamp_millis().max(0) as u64
 }
 
 pub async fn create_server(
@@ -85,27 +90,89 @@ pub async fn join_server(
     Path(id): Path<String>,
 ) -> Result<Json<Value>, AppError> {
     // Verify server exists
-    state
+    let server = state
         .repos
         .servers
         .find_by_id(&id)
         .await?
         .ok_or_else(|| AppError::NotFound("Server not found".into()))?;
 
+    let was_member = state.repos.servers.is_member(&id, &claims.sub).await?;
     state.repos.servers.add_member(&id, &claims.sub).await?;
 
-    if let Some(server) = state.repos.servers.find_by_id(&id).await? {
+    if !was_member {
         state
             .user_connections
             .send_to_user(
                 &claims.sub,
                 crate::ws::protocol::ServerMessage::ServerJoined {
-                    server: serde_json::to_value(server).unwrap_or(serde_json::Value::Null),
+                    server: serde_json::to_value(&server).unwrap_or(serde_json::Value::Null),
+                }
+                .to_json(),
+            )
+            .await;
+
+        let owner_id = server.owner.key().to_string();
+        if owner_id != claims.sub {
+            if let Some(user) = state.repos.users.find_by_id(&claims.sub).await? {
+                state
+                    .user_connections
+                    .send_to_user(
+                        &owner_id,
+                        ServerMessage::ServerMemberJoined {
+                            server_id: id.clone(),
+                            user: NotificationUser::from(&user),
+                            ts: now_ms(),
+                        }
+                        .to_json(),
+                    )
+                    .await;
+            }
+        }
+    }
+
+    Ok(Json(json!({ "status": "joined" })))
+}
+
+pub async fn leave_server(
+    State(state): State<AppState>,
+    AuthUser(claims): AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    let server = state
+        .repos
+        .servers
+        .find_by_id(&id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("Server not found".into()))?;
+
+    let owner_id = server.owner.key().to_string();
+    if owner_id == claims.sub {
+        return Err(AppError::BadRequest(
+            "Server owners cannot leave their own server".into(),
+        ));
+    }
+
+    if !state.repos.servers.is_member(&id, &claims.sub).await? {
+        return Err(AppError::Forbidden("Not a member of this server".into()));
+    }
+
+    state.repos.servers.remove_member(&id, &claims.sub).await?;
+
+    if let Some(user) = state.repos.users.find_by_id(&claims.sub).await? {
+        state
+            .user_connections
+            .send_to_user(
+                &owner_id,
+                ServerMessage::ServerMemberLeft {
+                    server_id: id,
+                    user: NotificationUser::from(&user),
+                    ts: now_ms(),
                 }
                 .to_json(),
             )
             .await;
     }
 
-    Ok(Json(json!({ "status": "joined" })))
+    Ok(Json(json!({ "status": "left" })))
 }

@@ -17,6 +17,12 @@ pub struct Post {
     pub published_content: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
+    /// Hydrated by the feed query via field traversal on the author record.
+    /// `None` when the post was fetched without author enrichment (detail view, collab paths).
+    #[serde(default)]
+    pub author_username: Option<String>,
+    #[serde(default)]
+    pub author_display_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

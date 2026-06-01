@@ -5,8 +5,12 @@
   import { wsClient } from '$lib/ws/client';
   import { initBridge } from '$lib/ws/bridge';
   import { fetchServers } from '$stores/servers';
+  import { fetchFriends, friends } from '$stores/friends';
+  import { fetchDms } from '$stores/direct-messages';
+  import { notifications } from '$stores/notifications';
   import ServerSidebar from '$components/ServerSidebar.svelte';
   import { Newspaper, Compass, Users, PenLine } from '@lucide/svelte';
+  import { get } from 'svelte/store';
 
   import { page } from '$app/state';
 
@@ -32,6 +36,18 @@
       await wsClient.connect();
       bridgeCleanup = initBridge();
       await fetchServers();
+      await fetchFriends();
+      await fetchDms();
+      const pendingCount = get(friends).pending.length;
+      if (pendingCount > 0) {
+        notifications.push({
+          key: 'friends:pending-login',
+          kind: 'friend_request',
+          title: `${pendingCount} pending friend request${pendingCount === 1 ? '' : 's'}`,
+          body: 'Review incoming requests from your friends section.',
+          href: '/friends',
+        });
+      }
     } catch (err) {
       console.error('Failed to initialize app:', err);
     }

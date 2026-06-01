@@ -7,7 +7,7 @@ pub struct Channel {
     pub id: Option<RecordId>,
     pub name: String,
     pub channel_type: ChannelType,
-    pub server: RecordId,
+    pub server: Option<RecordId>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -23,6 +23,8 @@ pub enum ChannelType {
     /// Phase 4 — synchronized watch-together room. Each watch channel maps
     /// 1:1 to a `watch_room` record keyed by the channel ID.
     Watch,
+    /// One-on-one private message channel between accepted friends.
+    Direct,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

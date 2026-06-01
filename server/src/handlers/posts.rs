@@ -181,9 +181,13 @@ pub async fn publish_post(
 
 pub async fn list_published(
     State(repos): State<Repos>,
-    AuthUser(_claims): AuthUser,
+    AuthUser(claims): AuthUser,
 ) -> Result<Json<Value>, AppError> {
-    let posts = repos.posts.list_published(50).await?;
+    let friend_ids = repos.social.get_friend_ids(&claims.sub).await?;
+    let posts = repos
+        .posts
+        .list_published_for_user(&claims.sub, friend_ids, 50)
+        .await?;
     Ok(Json(json!({ "posts": posts })))
 }
 
@@ -193,9 +197,10 @@ mod tests {
     use crate::auth::jwt::Claims;
     use crate::models::post::Post;
     use crate::repositories::{
-        channel::MockChannelRepo, message::MockMessageRepo, post::MockPostRepo,
-        recommendations::MockRecommendationsRepo, server::MockServerRepo, social::MockSocialRepo,
-        user::MockUserRepo, watch::MockWatchRepo, whiteboard::MockWhiteboardRepo,
+        channel::MockChannelRepo, direct::MockDirectMessageRepo, message::MockMessageRepo,
+        post::MockPostRepo, recommendations::MockRecommendationsRepo, server::MockServerRepo,
+        social::MockSocialRepo, user::MockUserRepo, watch::MockWatchRepo,
+        whiteboard::MockWhiteboardRepo,
     };
     use mockall::predicate::eq;
     use std::sync::Arc;
@@ -220,6 +225,8 @@ mod tests {
             published_content: None,
             created_at: None,
             updated_at: None,
+            author_username: None,
+            author_display_name: None,
         }
     }
 
@@ -228,6 +235,7 @@ mod tests {
             users: Arc::new(MockUserRepo::new()),
             servers: Arc::new(MockServerRepo::new()),
             channels: Arc::new(MockChannelRepo::new()),
+            direct_messages: Arc::new(MockDirectMessageRepo::new()),
             messages: Arc::new(MockMessageRepo::new()),
             social: Arc::new(MockSocialRepo::new()),
             posts: Arc::new(posts),
@@ -415,6 +423,7 @@ mod tests {
             users: Arc::new(MockUserRepo::new()),
             servers: Arc::new(MockServerRepo::new()),
             channels: Arc::new(MockChannelRepo::new()),
+            direct_messages: Arc::new(MockDirectMessageRepo::new()),
             messages: Arc::new(MockMessageRepo::new()),
             social: Arc::new(social),
             posts: Arc::new(posts),
@@ -625,5 +634,73 @@ mod tests {
 
         let published = response.0["post"]["published"].as_bool();
         assert_eq!(published, Some(true));
+    }
+
+    fn repos_for_feed(posts: MockPostRepo, social: MockSocialRepo) -> Repos {
+        Repos {
+            users: Arc::new(MockUserRepo::new()),
+            servers: Arc::new(MockServerRepo::new()),
+            channels: Arc::new(MockChannelRepo::new()),
+            direct_messages: Arc::new(MockDirectMessageRepo::new()),
+            messages: Arc::new(MockMessageRepo::new()),
+            social: Arc::new(social),
+            posts: Arc::new(posts),
+            whiteboards: Arc::new(MockWhiteboardRepo::new()),
+            watch: Arc::new(MockWatchRepo::new()),
+            recommendations: Arc::new(MockRecommendationsRepo::new()),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_published_returns_friend_and_own_posts() {
+        let mut social = MockSocialRepo::new();
+        social
+            .expect_get_friend_ids()
+            .with(eq("caller"))
+            .returning(|_| Ok(vec!["friend1".into()]));
+
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_list_published_for_user()
+            .withf(|user, friends, limit| {
+                user == "caller" && friends == &vec!["friend1".to_string()] && *limit == 50
+            })
+            .returning(|_, _, _| Ok(vec![post("p1", "caller", true)]));
+
+        let response = list_published(
+            State(repos_for_feed(posts, social)),
+            AuthUser(claims("caller")),
+        )
+        .await
+        .expect("handler should succeed");
+
+        assert!(response.0.get("posts").is_some());
+    }
+
+    #[tokio::test]
+    async fn list_published_passes_empty_friends_for_new_user() {
+        let mut social = MockSocialRepo::new();
+        social
+            .expect_get_friend_ids()
+            .with(eq("newuser"))
+            .returning(|_| Ok(vec![]));
+
+        let mut posts = MockPostRepo::new();
+        posts
+            .expect_list_published_for_user()
+            .withf(|user, friends, limit| user == "newuser" && friends.is_empty() && *limit == 50)
+            .returning(|_, _, _| Ok(vec![]));
+
+        let response = list_published(
+            State(repos_for_feed(posts, social)),
+            AuthUser(claims("newuser")),
+        )
+        .await
+        .expect("handler should succeed");
+
+        let posts_val = response.0["posts"]
+            .as_array()
+            .expect("posts should be array");
+        assert!(posts_val.is_empty());
     }
 }

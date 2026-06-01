@@ -69,7 +69,10 @@ pub(super) async fn check_channel_type_access(
     if channel.channel_type != expected {
         return false;
     }
-    let server_key = channel.server.key().to_string();
+    let Some(server) = channel.server.as_ref() else {
+        return false;
+    };
+    let server_key = server.key().to_string();
     state
         .repos
         .servers

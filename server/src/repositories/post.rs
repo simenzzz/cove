@@ -39,6 +39,15 @@ pub trait PostRepo: Send + Sync {
     async fn publish(&self, id: &str, content: String) -> Result<Post, AppError>;
     /// Most-recent published posts, newest first.
     async fn list_published(&self, limit: u32) -> Result<Vec<Post>, AppError>;
+    /// Published posts authored by `user_id` or any of `friend_ids`, newest first.
+    /// Author fields (`author_username`, `author_display_name`) are hydrated via
+    /// SurrealDB field traversal and populated on each returned `Post`.
+    async fn list_published_for_user(
+        &self,
+        user_id: &str,
+        friend_ids: Vec<String>,
+        limit: u32,
+    ) -> Result<Vec<Post>, AppError>;
     /// Returns true if there is an `invited_to` edge from `user_id` to the post.
     /// The author is not included — callers must `OR` against the author check.
     async fn is_invited(&self, post_id: &str, user_id: &str) -> Result<bool, AppError>;
@@ -124,6 +133,34 @@ impl PostRepo for SurrealPostRepo {
                 "SELECT * FROM post WHERE published = true \
                  ORDER BY updated_at DESC LIMIT $limit",
             )
+            .bind(("limit", limit))
+            .await?;
+        let posts: Vec<Post> = result.take(0)?;
+        Ok(posts)
+    }
+
+    async fn list_published_for_user(
+        &self,
+        user_id: &str,
+        friend_ids: Vec<String>,
+        limit: u32,
+    ) -> Result<Vec<Post>, AppError> {
+        let mut author_ids: Vec<surrealdb::RecordId> = friend_ids
+            .iter()
+            .map(|id| surrealdb::RecordId::from(("user", id.as_str())))
+            .collect();
+        author_ids.push(surrealdb::RecordId::from(("user", user_id)));
+
+        let mut result = self
+            .db
+            .query(
+                "SELECT *, author.username AS author_username, \
+                 author.display_name AS author_display_name \
+                 FROM post \
+                 WHERE published = true AND author IN $authors \
+                 ORDER BY updated_at DESC LIMIT $limit",
+            )
+            .bind(("authors", author_ids))
             .bind(("limit", limit))
             .await?;
         let posts: Vec<Post> = result.take(0)?;

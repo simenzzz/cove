@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import FriendSuggestions from '$components/FriendSuggestions.svelte';
   import UserAvatar from '$components/UserAvatar.svelte';
   import {
@@ -19,7 +20,8 @@
   import Button from '$components/ui/Button.svelte';
   import Input from '$components/ui/Input.svelte';
   import SectionHeading from '$components/ui/SectionHeading.svelte';
-  import { UserPlus, Check, X } from '@lucide/svelte';
+  import { UserPlus, Check, MessageCircle, X } from '@lucide/svelte';
+  import { openDm, dmId } from '$stores/direct-messages';
 
   // ── Add friend by username ──
   let username = $state('');
@@ -81,6 +83,18 @@
       await removeFriend(friendId(user));
     } catch (err) {
       toasts.error(err instanceof Error ? err.message : 'Could not remove friend.');
+    } finally {
+      busyId = null;
+    }
+  }
+
+  async function messageFriend(user: FriendUser) {
+    busyId = friendId(user);
+    try {
+      const dm = await openDm(friendId(user));
+      await goto(`/dms/${dmId(dm)}`);
+    } catch (err) {
+      toasts.error(err instanceof Error ? err.message : 'Could not open messages.');
     } finally {
       busyId = null;
     }
@@ -197,6 +211,15 @@
               <p class="truncate font-medium text-linen">{user.display_name || user.username}</p>
               <p class="truncate text-xs text-linen-muted">@{user.username}</p>
             </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              class="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+              onclick={() => messageFriend(user)}
+              disabled={busyId === friendId(user)}
+            >
+              <MessageCircle size={15} /> Message
+            </Button>
             <Button
               variant="ghost"
               size="sm"

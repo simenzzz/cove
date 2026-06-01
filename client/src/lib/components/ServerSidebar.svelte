@@ -7,8 +7,10 @@
   import { Compass, Plus, LogOut } from '@lucide/svelte';
   import Logo from '$components/ui/Logo.svelte';
   import Tooltip from '$components/ui/Tooltip.svelte';
+  import NotificationBar from '$components/NotificationBar.svelte';
 
   let menuOpen = $state(false);
+  let notificationsOpen = $state(false);
   let loggingOut = $state(false);
 
   const displayName = $derived($auth.user?.displayName || $auth.user?.username || '');
@@ -29,6 +31,10 @@
       goto('/login');
     }
   }
+
+  $effect(() => {
+    if (notificationsOpen) menuOpen = false;
+  });
 </script>
 
 <svelte:window
@@ -92,47 +98,54 @@
   </Tooltip>
 
   <!-- User panel pinned to the bottom -->
-  <div class="relative mt-auto">
-    {#if menuOpen}
-      <button
-        type="button"
-        aria-label="Close menu"
-        class="fixed inset-0 z-10 cursor-default"
-        onclick={() => (menuOpen = false)}
-      ></button>
+  <div class="mt-auto flex flex-col items-center gap-2">
+    <NotificationBar bind:open={notificationsOpen} />
 
-      <div
-        class="glass absolute bottom-0 left-16 z-20 w-52 rounded-xl border border-line-strong p-2 shadow-lift"
-        role="menu"
-      >
-        <div class="mb-1 border-b border-line px-2 py-2">
-          <p class="truncate text-sm font-semibold text-linen">{displayName}</p>
-          {#if $auth.user?.username}
-            <p class="truncate text-xs text-linen-muted">@{$auth.user.username}</p>
-          {/if}
-        </div>
+    <div class="relative">
+      {#if menuOpen}
         <button
           type="button"
-          role="menuitem"
-          onclick={handleLogout}
-          disabled={loggingOut}
-          class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
-        >
-          <LogOut size={15} />
-          {loggingOut ? 'Logging out…' : 'Log out'}
-        </button>
-      </div>
-    {/if}
+          aria-label="Close menu"
+          class="fixed inset-0 z-10 cursor-default"
+          onclick={() => (menuOpen = false)}
+        ></button>
 
-    <button
-      type="button"
-      aria-label="Account menu"
-      aria-haspopup="menu"
-      aria-expanded={menuOpen}
-      onclick={() => (menuOpen = !menuOpen)}
-      class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal to-teal-soft font-display font-semibold text-linen ring-1 ring-line transition-all duration-200 hover:rounded-xl hover:ring-2 hover:ring-teal-bright"
-    >
-      {initial}
-    </button>
+        <div
+          class="glass absolute bottom-0 left-16 z-20 w-52 rounded-xl border border-line-strong p-2 shadow-lift"
+          role="menu"
+        >
+          <div class="mb-1 border-b border-line px-2 py-2">
+            <p class="truncate text-sm font-semibold text-linen">{displayName}</p>
+            {#if $auth.user?.username}
+              <p class="truncate text-xs text-linen-muted">@{$auth.user.username}</p>
+            {/if}
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onclick={handleLogout}
+            disabled={loggingOut}
+            class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-danger transition-colors hover:bg-danger-soft disabled:opacity-50"
+          >
+            <LogOut size={15} />
+            {loggingOut ? 'Logging out…' : 'Log out'}
+          </button>
+        </div>
+      {/if}
+
+      <button
+        type="button"
+        aria-label="Account menu"
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onclick={() => {
+          notificationsOpen = false;
+          menuOpen = !menuOpen;
+        }}
+        class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-teal to-teal-soft font-display font-semibold text-linen ring-1 ring-line transition-all duration-200 hover:rounded-xl hover:ring-2 hover:ring-teal-bright"
+      >
+        {initial}
+      </button>
+    </div>
   </div>
 </nav>

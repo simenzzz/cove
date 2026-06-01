@@ -25,6 +25,7 @@ pub trait ServerRepo: Send + Sync {
     async fn find_by_id(&self, id: &str) -> Result<Option<Server>, AppError>;
     async fn list_for_user(&self, user_id: &str) -> Result<Vec<Server>, AppError>;
     async fn add_member(&self, server_id: &str, user_id: &str) -> Result<(), AppError>;
+    async fn remove_member(&self, server_id: &str, user_id: &str) -> Result<(), AppError>;
     async fn is_member(&self, server_id: &str, user_id: &str) -> Result<bool, AppError>;
     async fn list_member_ids(&self, server_id: &str) -> Result<Vec<String>, AppError>;
     /// Distinct user ids who are members of any server the given user is in
@@ -85,6 +86,15 @@ impl ServerRepo for SurrealServerRepo {
         }
         self.db
             .query("RELATE $user -> member_of -> $server SET joined_at = time::now()")
+            .bind(("user", surrealdb::RecordId::from(("user", user_id))))
+            .bind(("server", surrealdb::RecordId::from(("server", server_id))))
+            .await?;
+        Ok(())
+    }
+
+    async fn remove_member(&self, server_id: &str, user_id: &str) -> Result<(), AppError> {
+        self.db
+            .query("DELETE member_of WHERE in = $user AND out = $server")
             .bind(("user", surrealdb::RecordId::from(("user", user_id))))
             .bind(("server", surrealdb::RecordId::from(("server", server_id))))
             .await?;

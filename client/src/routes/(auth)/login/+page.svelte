@@ -5,7 +5,7 @@
   import Input from '$components/ui/Input.svelte';
   import { AlertCircle } from '@lucide/svelte';
 
-  let username = $state('');
+  let email = $state('');
   let password = $state('');
   let error = $state('');
   let loading = $state(false);
@@ -15,7 +15,7 @@
     error = '';
     loading = true;
     try {
-      await login(username, password);
+      await login(email, password);
       goto('/');
     } catch (err) {
       error = err instanceof Error ? err.message : 'Login failed';
@@ -41,8 +41,8 @@
 
   <form onsubmit={handleSubmit} class="mt-6 space-y-4">
     <div class="space-y-1.5">
-      <label for="username" class="text-xs font-medium text-linen-dim">Username</label>
-      <Input id="username" type="text" bind:value={username} placeholder="your-handle" required />
+      <label for="email" class="text-xs font-medium text-linen-dim">Email</label>
+      <Input id="email" type="email" bind:value={email} placeholder="you@example.com" required />
     </div>
     <div class="space-y-1.5">
       <label for="password" class="text-xs font-medium text-linen-dim">Password</label>
