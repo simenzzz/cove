@@ -33,6 +33,14 @@ function needsCsrf(method: string | undefined, path: string): boolean {
   return path.startsWith('/api/auth/refresh') || path.startsWith('/api/auth/logout');
 }
 
+function shouldAttemptRefresh(path: string): boolean {
+  return (
+    !path.startsWith('/api/auth/login') &&
+    !path.startsWith('/api/auth/register') &&
+    !path.startsWith('/api/auth/refresh')
+  );
+}
+
 class ApiClient {
   private token: string | null = null;
   private refreshPromise: Promise<boolean> | null = null;
@@ -82,7 +90,7 @@ class ApiClient {
       credentials: 'include',
     });
 
-    if (response.status === 401 && !path.includes('/api/auth/refresh')) {
+    if (response.status === 401 && shouldAttemptRefresh(path)) {
       const refreshed = await this.silentRefresh();
       if (refreshed) {
         headers['Authorization'] = `Bearer ${this.token}`;

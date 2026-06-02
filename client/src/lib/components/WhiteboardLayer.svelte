@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { WhiteboardProvider, LayerMeta } from '$lib/collab/whiteboard-provider';
   import { layerVisibility, toolState } from '$lib/stores/whiteboards';
+  import TextInputDialog from '$components/ui/TextInputDialog.svelte';
 
   let { provider }: { provider: WhiteboardProvider | null } = $props();
 
   let layers: LayerMeta[] = $state([]);
   let visibility: Record<string, boolean> = $state({});
   let activeId = $state('default');
+  let addLayerOpen = $state(false);
 
   // Re-read layers whenever the underlying Y.Array changes.
   $effect(() => {
@@ -34,10 +36,10 @@
     toolState.update((s) => ({ ...s, activeLayerId: id }));
   }
 
-  function addLayer() {
+  function addLayer(nameInput: string) {
     if (!provider) return;
     const id = `layer-${Math.random().toString(36).slice(2, 8)}`;
-    const name = prompt('Layer name:', 'New layer') ?? 'New layer';
+    const name = nameInput.trim() || 'New layer';
     provider.ensureLayer(id, name);
     setActive(id);
   }
@@ -46,7 +48,7 @@
 <aside class="layers">
   <div class="header">
     <span>Layers</span>
-    <button type="button" onclick={addLayer}>+</button>
+    <button type="button" onclick={() => (addLayerOpen = true)}>+</button>
   </div>
   <ul>
     {#each layers as layer (layer.id)}
@@ -74,6 +76,15 @@
     {/each}
   </ul>
 </aside>
+
+<TextInputDialog
+  bind:open={addLayerOpen}
+  title="New layer"
+  label="Layer name"
+  value="New layer"
+  submitLabel="Create layer"
+  onsubmit={addLayer}
+/>
 
 <style>
   .layers {

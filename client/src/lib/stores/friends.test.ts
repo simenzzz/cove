@@ -9,6 +9,7 @@ import { api } from '$lib/api/client';
 import {
   friends,
   friendId,
+  isAcceptedFriend,
   fetchFriends,
   sendRequest,
   acceptRequest,
@@ -32,6 +33,22 @@ beforeEach(() => {
 describe('friendId', () => {
   it('normalizes the record id', () => {
     expect(friendId(user('abc'))).toBe('abc');
+  });
+});
+
+describe('isAcceptedFriend', () => {
+  it('returns true only when the user is in the accepted friends list', () => {
+    const state = {
+      friends: [user('accepted')],
+      pending: [user('pending')],
+      suggestions: [user('suggested')],
+    };
+
+    expect(isAcceptedFriend('accepted', state)).toBe(true);
+    expect(isAcceptedFriend(user('accepted'), state)).toBe(true);
+    expect(isAcceptedFriend('pending', state)).toBe(false);
+    expect(isAcceptedFriend('suggested', state)).toBe(false);
+    expect(isAcceptedFriend('', state)).toBe(false);
   });
 });
 

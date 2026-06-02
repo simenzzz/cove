@@ -7,6 +7,7 @@
     friends,
     fetchFriends,
     friendId,
+    isAcceptedFriend,
     lookupUser,
     sendRequest,
     acceptRequest,
@@ -89,6 +90,11 @@
   }
 
   async function messageFriend(user: FriendUser) {
+    if (!isAcceptedFriend(user, $friends)) {
+      toasts.error('You can only message accepted friends.');
+      return;
+    }
+
     busyId = friendId(user);
     try {
       const dm = await openDm(friendId(user));

@@ -24,7 +24,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     clearMocks: true,
-    include: ['src/**/*.{test,spec}.ts'],
+    include: ['src/**/*.{test,spec}.ts', 'tests/**/*.{test,spec}.js'],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',

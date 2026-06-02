@@ -5,6 +5,8 @@
   import DrawingTools from '$components/DrawingTools.svelte';
   import Whiteboard from '$components/Whiteboard.svelte';
   import WhiteboardLayer from '$components/WhiteboardLayer.svelte';
+  import ConfirmDialog from '$components/ui/ConfirmDialog.svelte';
+  import TextInputDialog from '$components/ui/TextInputDialog.svelte';
   import { fetchChannels } from '$stores/channels';
   import type { WhiteboardProvider } from '$lib/collab/whiteboard-provider';
   import {
@@ -25,6 +27,9 @@
   let provider: WhiteboardProvider | null = $state(null);
   let error = $state('');
   let busy = $state(false);
+  let saveVersionOpen = $state(false);
+  let restoreOpen = $state(false);
+  let checkpointToRestore: WhiteboardCheckpoint | null = $state(null);
 
   onMount(async () => {
     if (!serverId || !channelId) return;
@@ -37,11 +42,15 @@
     }
   });
 
-  async function onSaveVersion() {
+  function onSaveVersion() {
+    saveVersionOpen = true;
+  }
+
+  async function saveVersion(labelInput: string) {
     if (!channelId) return;
     busy = true;
     try {
-      const label = prompt('Label this version (optional):') ?? undefined;
+      const label = labelInput.trim() || undefined;
       await createCheckpoint(channelId, label);
       checkpoints = await listCheckpoints(channelId);
     } catch (e) {
@@ -51,10 +60,15 @@
     }
   }
 
-  async function onRestore(cp: WhiteboardCheckpoint) {
+  function onRestore(cp: WhiteboardCheckpoint) {
     if (!channelId) return;
-    if (!confirm(`Restore "${cp.label ?? 'snapshot'}"? Current state will be overwritten.`))
-      return;
+    checkpointToRestore = cp;
+    restoreOpen = true;
+  }
+
+  async function restoreSelectedCheckpoint() {
+    if (!channelId || !checkpointToRestore) return;
+    const cp = checkpointToRestore;
     busy = true;
     try {
       await restoreCheckpoint(channelId, checkpointIdToString(cp));
@@ -63,6 +77,7 @@
       error = e instanceof Error ? e.message : String(e);
     } finally {
       busy = false;
+      checkpointToRestore = null;
     }
   }
 </script>
@@ -129,3 +144,25 @@
   </div>
 </div>
 
+<TextInputDialog
+  bind:open={saveVersionOpen}
+  title="Save whiteboard version"
+  label="Version label"
+  placeholder="Optional label"
+  submitLabel="Save version"
+  onsubmit={saveVersion}
+/>
+
+<ConfirmDialog
+  bind:open={restoreOpen}
+  title="Restore version"
+  confirmLabel="Restore"
+  danger
+  onconfirm={restoreSelectedCheckpoint}
+  oncancel={() => (checkpointToRestore = null)}
+>
+  <p>
+    Restore "{checkpointToRestore?.label ?? 'snapshot'}"? Current whiteboard state will be
+    overwritten.
+  </p>
+</ConfirmDialog>

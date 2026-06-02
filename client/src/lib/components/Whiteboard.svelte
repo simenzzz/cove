@@ -14,6 +14,7 @@
   } from '$lib/stores/whiteboards';
   import { auth } from '$stores/auth';
   import WhiteboardCursors from './WhiteboardCursors.svelte';
+  import TextInputDialog from '$components/ui/TextInputDialog.svelte';
 
   let {
     channelId,
@@ -40,6 +41,8 @@
   let strokeWidth = $state(3);
   let activeLayerId = $state(DEFAULT_LAYER_ID);
   let peers: Record<string, unknown> = $state({});
+  let textDialogOpen = $state(false);
+  let pendingTextPoint: Point | null = $state(null);
 
   // In-flight stroke / drag state. Kept local so we can stream incrementally.
   let drawingShape: Y.Map<unknown> | null = null;
@@ -290,12 +293,8 @@
       return;
     }
     if (tool === 'text') {
-      const txt = prompt('Text:') ?? '';
-      if (txt.trim()) {
-        provider.transact(() => {
-          createShape('text', [p], { text: txt });
-        });
-      }
+      pendingTextPoint = p;
+      textDialogOpen = true;
       return;
     }
 
@@ -483,6 +482,15 @@
     for (let i = 0; i < s.length; i++) bytes[i] = s.charCodeAt(i);
     return bytes;
   }
+
+  function addTextShape(text: string) {
+    const point = pendingTextPoint;
+    pendingTextPoint = null;
+    if (!provider || !point || !text.trim()) return;
+    provider.transact(() => {
+      createShape('text', [point], { text: text.trim() });
+    });
+  }
 </script>
 
 <div class="whiteboard">
@@ -497,6 +505,18 @@
   ></canvas>
   <WhiteboardCursors {peers} />
 </div>
+
+<TextInputDialog
+  bind:open={textDialogOpen}
+  title="Add text"
+  label="Text"
+  placeholder="Type text for the whiteboard"
+  submitLabel="Add text"
+  multiline
+  required
+  onsubmit={addTextShape}
+  oncancel={() => (pendingTextPoint = null)}
+/>
 
 <style>
   .whiteboard {

@@ -28,6 +28,12 @@ export function friendId(user: FriendUser): string {
   return recordKey(user.id);
 }
 
+export function isAcceptedFriend(userOrId: FriendUser | string, state: FriendState): boolean {
+  const id = typeof userOrId === 'string' ? userOrId : friendId(userOrId);
+  if (!id) return false;
+  return state.friends.some((user) => friendId(user) === id);
+}
+
 export async function fetchFriends(): Promise<void> {
   try {
     const [friendsData, pendingData, suggestionsData] = await Promise.all([
