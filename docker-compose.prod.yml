@@ -2,7 +2,8 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #
 # Key differences from dev:
-#   - Caddy reverse proxy fronts everything; only Caddy publishes host ports.
+#   - Caddy reverse proxy fronts everything on localhost:8080; nginx owns
+#     public 80/443 and proxies to Caddy.
 #   - All services run read-only with all caps dropped and no-new-privileges.
 #   - Resource limits and tighter logging.
 #
@@ -22,9 +23,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "127.0.0.1:8080:80"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data

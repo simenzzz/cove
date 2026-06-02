@@ -1,5 +1,5 @@
-# Caddy will auto-provision TLS from Let's Encrypt for $DOMAIN. The HTTP→HTTPS
-# upgrade is automatic.
+# Caddy runs as an internal HTTP router on localhost:8080. Public TLS is
+# terminated by the host nginx vhost for $DOMAIN, which proxies to Caddy.
 #
 # Routing:
 #   /api/*          →  Rust backend
@@ -11,7 +11,7 @@
     email {$ACME_EMAIL}
 }
 
-{$DOMAIN} {
+http://{$DOMAIN} {
     encode zstd gzip
 
     @api path /api/* /ws /health /ready
