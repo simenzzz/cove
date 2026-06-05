@@ -81,6 +81,7 @@ DEFINE INDEX IF NOT EXISTS whiteboard_checkpoint_channel_idx
 -- ─── Watch rooms (synchronized media) ──────────────────────────────────────
 DEFINE TABLE IF NOT EXISTS watch_room SCHEMALESS;
 DEFINE FIELD IF NOT EXISTS channel ON watch_room TYPE record<channel>;
+DEFINE FIELD IF NOT EXISTS playback_rate ON watch_room TYPE number DEFAULT 1.0;
 DEFINE INDEX IF NOT EXISTS watch_room_channel_unique ON watch_room FIELDS channel UNIQUE;
 
 DEFINE TABLE IF NOT EXISTS watch_queue_item SCHEMALESS;

@@ -15,6 +15,7 @@ struct CreateWatchRoomDb {
     current_item: Option<surrealdb::RecordId>,
     playback_paused: bool,
     playback_position_ms: i64,
+    playback_rate: f64,
     playback_updated_at: surrealdb::Datetime,
     created_at: surrealdb::Datetime,
     updated_at: surrealdb::Datetime,
@@ -46,6 +47,7 @@ pub struct PlaybackPersist {
     pub current_item_id: Option<String>,
     pub position_ms: i64,
     pub paused: bool,
+    pub rate: f64,
 }
 
 /// Persistence for watch rooms and their queues. A watch channel has exactly
@@ -129,6 +131,7 @@ impl WatchRepo for SurrealWatchRepo {
                 current_item: None,
                 playback_paused: true,
                 playback_position_ms: 0,
+                playback_rate: 1.0,
                 playback_updated_at: now.clone(),
                 created_at: now.clone(),
                 updated_at: now,
@@ -169,6 +172,7 @@ impl WatchRepo for SurrealWatchRepo {
             .query(
                 "UPDATE $id SET leader = $leader, current_item = $current, \
                  playback_paused = $paused, playback_position_ms = $pos, \
+                 playback_rate = $rate, \
                  playback_updated_at = time::now(), updated_at = time::now()",
             )
             .bind(("id", surrealdb::RecordId::from(("watch_room", channel_id))))
@@ -176,6 +180,7 @@ impl WatchRepo for SurrealWatchRepo {
             .bind(("current", current_item))
             .bind(("paused", playback.paused))
             .bind(("pos", playback.position_ms))
+            .bind(("rate", playback.rate))
             .await?;
         Ok(())
     }

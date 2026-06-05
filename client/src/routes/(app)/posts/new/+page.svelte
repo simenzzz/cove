@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation';
   import { createDraft, createPost, postIdToString } from '$lib/stores/posts';
   import Button from '$components/ui/Button.svelte';
+  import { Save, Send } from '@lucide/svelte';
 
   let title = $state('');
   let body = $state('');
@@ -65,36 +66,47 @@
   }
 </script>
 
-<section class="min-h-full px-4 py-10 sm:px-8">
+<section class="relative min-h-full overflow-hidden px-4 py-8 sm:px-8 sm:py-12">
   <form
-    class="mx-auto flex w-full max-w-3xl flex-col gap-2 rounded-2xl border border-linen/15 bg-linen/[0.92] p-6 text-canvas shadow-lift sm:p-8"
+    class="group relative mx-auto flex min-h-[min(680px,calc(100vh-8rem))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-line-strong/70 bg-surface/80 text-linen shadow-lift backdrop-blur-xl before:absolute before:inset-x-6 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-copper/70 before:to-transparent sm:before:inset-x-10"
     onsubmit={onSubmit}
   >
-    <p class="mb-1 text-2xs font-semibold uppercase tracking-[0.18em] text-copper-deep">New post</p>
+    <div class="border-b border-line/80 bg-elevated/30 px-5 py-5 sm:px-8 sm:py-6">
+      <div class="mb-5 flex items-center justify-between gap-4">
+        <p class="text-2xs font-semibold uppercase tracking-[0.22em] text-copper-bright">
+          New post
+        </p>
+        <p class="rounded-full border border-line bg-canvas/35 px-3 py-1 text-xs text-linen-muted">
+          {bodyText.length} chars
+        </p>
+      </div>
 
-    <label class="sr-only" for="post-title">Post title</label>
-    <input
-      id="post-title"
-      bind:value={title}
-      placeholder="Give this post a title"
-      maxlength="200"
-      autocomplete="off"
-      disabled={submitting}
-      class="w-full border-b border-canvas/20 bg-transparent pb-3 pt-1 font-display text-4xl font-bold leading-tight text-canvas outline-none transition-colors placeholder:text-canvas/45 focus:border-copper-deep"
-    />
+      <label class="sr-only" for="post-title">Post title</label>
+      <input
+        id="post-title"
+        bind:value={title}
+        placeholder="Give this post a title"
+        maxlength="200"
+        autocomplete="off"
+        disabled={submitting}
+        class="w-full border-b border-line-strong/80 bg-transparent pb-4 font-display text-3xl font-bold leading-tight text-linen outline-none transition-colors placeholder:text-linen-faint focus:border-copper-bright sm:text-5xl"
+      />
+    </div>
 
-    <label class="sr-only" for="post-body">Post body</label>
-    <textarea
-      id="post-body"
-      bind:value={body}
-      placeholder="Write the update, idea, or announcement…"
-      rows="14"
-      disabled={submitting}
-      class="min-h-80 w-full resize-y bg-transparent py-2 text-lg leading-relaxed text-canvas outline-none placeholder:text-canvas/45"
-    ></textarea>
+    <div class="flex min-h-0 flex-1 bg-canvas/20 px-5 py-5 sm:px-8 sm:py-6">
+      <label class="sr-only" for="post-body">Post body</label>
+      <textarea
+        id="post-body"
+        bind:value={body}
+        placeholder="Write the update, idea, or announcement…"
+        rows="14"
+        disabled={submitting}
+        class="min-h-80 w-full flex-1 resize-none bg-transparent text-lg leading-8 text-linen outline-none transition-colors placeholder:text-linen-muted focus:placeholder:text-linen-faint sm:min-h-[26rem]"
+      ></textarea>
+    </div>
 
     <div
-      class="flex flex-col items-stretch gap-3 border-t border-canvas/15 pt-4 transition-all duration-150 sm:flex-row sm:items-center sm:justify-between {hasStarted
+      class="flex flex-col items-stretch gap-3 border-t border-line bg-elevated/45 px-5 py-4 transition-all duration-200 sm:flex-row sm:items-center sm:justify-between sm:px-8 {hasStarted
         ? 'pointer-events-auto opacity-100'
         : 'pointer-events-none opacity-0'}"
     >
@@ -102,9 +114,9 @@
         {#if error}
           <p class="text-danger">{error}</p>
         {:else if bodyText}
-          <p class="text-canvas/60">{bodyText.length} characters</p>
+          <p class="text-linen-muted">{bodyText.length} characters</p>
         {:else}
-          <p class="text-canvas/60">Drafts can be published from the collaborative editor.</p>
+          <p class="text-linen-muted">Ready to save</p>
         {/if}
       </div>
 
@@ -114,11 +126,13 @@
           type="button"
           disabled={!canSaveDraft}
           onclick={saveDraft}
-          class="border-canvas/25 text-canvas hover:border-copper-deep hover:text-copper-deep"
+          class="border-line-strong bg-canvas/20 text-linen-dim hover:border-copper hover:bg-copper-soft/50 hover:text-linen"
         >
+          <Save class="h-4 w-4" aria-hidden="true" />
           {mode === 'draft' ? 'Saving…' : 'Save draft'}
         </Button>
         <Button type="button" disabled={!canPost} onclick={publishNow}>
+          <Send class="h-4 w-4" aria-hidden="true" />
           {mode === 'post' ? 'Posting…' : 'Post'}
         </Button>
       </div>

@@ -3,10 +3,8 @@
 //! from `connection.rs`.
 //!
 //! All three resource kinds share the same subscribe / unsubscribe / update /
-//! awareness lifecycle, differing only by their `ResourceRef` constructor and
-//! the rate-limit bucket, so the common logic is factored into the private
-//! `*_resource` helpers. The one exception is whiteboard updates, which carry
-//! their own 30/sec cap for live drawing.
+//! awareness lifecycle, differing only by their `ResourceRef` constructor, so
+//! the common logic is factored into the private `*_resource` helpers.
 
 use std::collections::HashSet;
 
@@ -14,15 +12,11 @@ use tokio::sync::mpsc;
 
 use crate::collab::resource::ResourceRef;
 use crate::collab::CollabManager;
-use crate::middleware::rate_limit::{
-    check_rate_limit, collab_subscribe_key, whiteboard_awareness_key, whiteboard_subscribe_key,
-    whiteboard_update_key, RateLimitConfig,
-};
 use crate::AppState;
 
 /// Cap on the serialized JSON size of an awareness blob. Held in memory per
 /// session and broadcast to every peer, so an unbounded blob is a DoS
-/// amplification vector independent of the rate limit.
+/// amplification vector.
 const MAX_AWARENESS_BYTES: usize = 4 * 1024;
 
 fn awareness_too_large(value: &serde_json::Value) -> bool {
@@ -37,23 +31,7 @@ async fn subscribe_resource(
     user_id: &str,
     collab_subscriptions: &mut HashSet<ResourceRef>,
     r: ResourceRef,
-    sub_key: String,
 ) {
-    // Rate-limit subscribe churn so the (uncached) authz path can't be
-    // hammered. 10/sec per user is plenty for legitimate page navigation.
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: sub_key,
-            limit: 10,
-            window_secs: 1,
-        },
-    )
-    .await
-    .is_err()
-    {
-        return;
-    }
     collab_subscriptions.insert(r.clone());
     if let Err(e) = state.collab.subscribe(&r, user_id, out_tx.clone()).await {
         CollabManager::send_error(out_tx, &r, "subscribe_failed", &e).await;
@@ -88,25 +66,9 @@ async fn update_awareness(
     r: ResourceRef,
     aw_state: serde_json::Value,
 ) {
-    // Size cap independent of rate limit — an awareness blob is amplified to
-    // every peer on broadcast, so an unbounded payload is a DoS amplifier.
+    // An awareness blob is amplified to every peer on broadcast, so an
+    // unbounded payload is a DoS amplifier.
     if awareness_too_large(&aw_state) {
-        return;
-    }
-    // Awareness fan-out is amplified to every peer; cap at 2/sec to bound
-    // broadcast bandwidth even with the size cap.
-    let rate_key = whiteboard_awareness_key(user_id, &r.id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: rate_key,
-            limit: 2,
-            window_secs: 1,
-        },
-    )
-    .await
-    .is_err()
-    {
         return;
     }
     state.collab.update_awareness(&r, user_id, aw_state).await;
@@ -121,14 +83,12 @@ pub async fn collab_subscribe(
     collab_subscriptions: &mut HashSet<ResourceRef>,
     post_id: String,
 ) {
-    let key = collab_subscribe_key(user_id);
     subscribe_resource(
         state,
         out_tx,
         user_id,
         collab_subscriptions,
         ResourceRef::post(post_id),
-        key,
     )
     .await;
 }
@@ -183,14 +143,12 @@ pub async fn whiteboard_subscribe(
     collab_subscriptions: &mut HashSet<ResourceRef>,
     whiteboard_id: String,
 ) {
-    let key = whiteboard_subscribe_key(user_id);
     subscribe_resource(
         state,
         out_tx,
         user_id,
         collab_subscriptions,
         ResourceRef::whiteboard(whiteboard_id),
-        key,
     )
     .await;
 }
@@ -218,23 +176,6 @@ pub async fn whiteboard_update(
     update_b64: String,
 ) {
     let r = ResourceRef::whiteboard(whiteboard_id);
-    // Rate cap: 30 stroke-updates/sec per user per whiteboard. Live drawing
-    // must stay smooth; this only catches malicious or runaway clients.
-    let rate_key = whiteboard_update_key(user_id, &r.id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: rate_key,
-            limit: 30,
-            window_secs: 1,
-        },
-    )
-    .await
-    .is_err()
-    {
-        CollabManager::send_error(out_tx, &r, "rate_limited", "Too many updates").await;
-        return;
-    }
     if let Err(e) = state.collab.apply_update(&r, user_id, &update_b64).await {
         CollabManager::send_error(out_tx, &r, "update_failed", &e).await;
     }
@@ -264,14 +205,12 @@ pub async fn channel_doc_subscribe(
     collab_subscriptions: &mut HashSet<ResourceRef>,
     channel_id: String,
 ) {
-    let key = collab_subscribe_key(user_id);
     subscribe_resource(
         state,
         out_tx,
         user_id,
         collab_subscriptions,
         ResourceRef::channel_doc(channel_id),
-        key,
     )
     .await;
 }

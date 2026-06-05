@@ -69,7 +69,7 @@ export interface WatchRoomState {
   viewers: WatchViewer[];
   /// Ephemeral floating reactions. Auto-pruned after `REACTION_TTL_MS`.
   reactions: WatchReactionEvent[];
-  /// Most recent error message from the server (e.g. not_leader, rate_limited).
+  /// Most recent error message from the server (e.g. not_leader).
   error: string | null;
 }
 
@@ -77,8 +77,8 @@ export interface WatchRoomState {
 export const REACTION_TTL_MS = 3000;
 
 /// Hard cap on simultaneous floating reactions. Defends against unbounded
-/// growth if a server-side rate-limit bug or replay storm floods us — the
-/// store would otherwise leak DOM nodes proportional to message volume.
+/// growth if a replay storm floods us; the store would otherwise leak DOM
+/// nodes proportional to message volume.
 const REACTION_BUFFER_CAP = 50;
 
 const initialPlayback: WatchPlayback = {
@@ -132,7 +132,7 @@ export function bindWatchRoom(channelId: string): () => void {
   offs.push(
     wsClient.on('watch_playback', (msg: WsMessage) => {
       if (msg.channel_id !== channelId) return;
-      const action = msg.action as 'play' | 'pause' | 'seek';
+      const action = msg.action as 'play' | 'pause' | 'seek' | 'rate';
       update(channelId, (s) => ({
         ...s,
         playback: {
@@ -140,6 +140,7 @@ export function bindWatchRoom(channelId: string): () => void {
           position_ms: msg.position_ms as number,
           server_ts: msg.server_ts as number,
           paused: action === 'pause' ? true : action === 'play' ? false : s.playback.paused,
+          rate: typeof msg.rate === 'number' ? msg.rate : s.playback.rate,
         },
       }));
     }),
@@ -155,6 +156,7 @@ export function bindWatchRoom(channelId: string): () => void {
           position_ms: msg.position_ms as number,
           server_ts: msg.server_ts as number,
           paused: msg.paused as boolean,
+          rate: typeof msg.rate === 'number' ? msg.rate : s.playback.rate,
         },
       }));
     }),
@@ -236,7 +238,7 @@ export function bindWatchRoom(channelId: string): () => void {
         return { ...s, reactions: trimmed };
       });
       // Auto-prune after the CSS animation has finished. Independent timer
-      // per reaction keeps the cleanup simple — bounded by the rate limit.
+      // per reaction keeps the cleanup simple.
       setTimeout(() => {
         update(channelId, (s) => ({
           ...s,
@@ -274,20 +276,25 @@ export function bindWatchRoom(channelId: string): () => void {
   };
 }
 
-/// Leader-only: send a playback control. `action` is "play" | "pause" | "seek".
+/// Leader-only: send a playback control. `action` is "play" | "pause" | "seek" | "rate".
 export function sendPlayback(
   channelId: string,
-  action: 'play' | 'pause' | 'seek',
+  action: 'play' | 'pause' | 'seek' | 'rate',
   positionMs: number,
+  rate?: number,
 ): void {
-  wsClient.send({
+  const message: WsMessage = {
     v: 1,
     type: 'watch_playback',
     channel_id: channelId,
     action,
     position_ms: Math.max(0, Math.round(positionMs)),
     client_ts: Date.now(),
-  });
+  };
+  if (typeof rate === 'number') {
+    message.rate = rate;
+  }
+  wsClient.send(message);
 }
 
 export function sendTransferLeader(channelId: string, toUserId: string): void {

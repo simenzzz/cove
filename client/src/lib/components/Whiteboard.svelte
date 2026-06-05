@@ -312,7 +312,7 @@
     if (!provider) return;
     const p = eventPoint(e);
 
-    // Awareness: broadcast cursor at ≤30 Hz throttle (server caps at 30/s).
+    // Awareness: keep cursor broadcasts paced for smooth collaboration.
     sendCursorThrottled(p);
 
     if (movingShape && moveOrigin) {

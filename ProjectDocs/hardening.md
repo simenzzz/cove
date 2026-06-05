@@ -32,15 +32,15 @@ the production-readiness pass, plus low-priority follow-up items.
 - WebSocket ticket TTL is 10 seconds.
 - WebSocket tickets bind a per-issue nonce that the client echoes on `/ws`.
 - Tickets and nonces are consumed atomically from Redis.
-- Refresh and WebSocket-ticket endpoints have per-user rate limits.
+- Login and register endpoints have per-IP rate limits.
 - Refresh and logout use double-submit CSRF protection.
 - Production refresh and CSRF cookies use the `__Host-` prefix.
 
 ### WebSocket Input
 
 - Watch queue titles are rejected at the connection boundary when too long.
-- Awareness updates are rate-limited on whiteboard and post collaboration
-  paths.
+- Awareness update payloads are size-capped on whiteboard and post
+  collaboration paths.
 - Heartbeat handling enforces a server-side minimum interval.
 
 ### Error Responses

@@ -36,6 +36,7 @@ interface YTPlayerOptions {
   events?: {
     onReady?: (event: { target: YTPlayerInstance }) => void;
     onStateChange?: (event: { data: number; target: YTPlayerInstance }) => void;
+    onPlaybackRateChange?: (event: { data: number; target: YTPlayerInstance }) => void;
     onError?: (event: { data: number }) => void;
   };
 }
@@ -47,6 +48,7 @@ interface YTPlayerInstance {
   getCurrentTime(): number;
   getDuration(): number;
   getPlayerState(): number;
+  getPlaybackRate(): number;
   loadVideoById(opts: { videoId: string; startSeconds?: number }): void;
   cueVideoById(opts: { videoId: string; startSeconds?: number }): void;
   destroy(): void;
@@ -89,7 +91,8 @@ export type PlayerEvent =
   | { kind: 'play' }
   | { kind: 'pause' }
   | { kind: 'ended' }
-  | { kind: 'seek'; position_ms: number };
+  | { kind: 'seek'; position_ms: number }
+  | { kind: 'rate'; rate: number };
 
 export interface YouTubePlayer {
   ready: Promise<void>;
@@ -118,10 +121,9 @@ export function createYouTubePlayer(element: HTMLElement): YouTubePlayer {
           width: '100%',
           height: '100%',
           playerVars: {
-            // Hide YouTube chrome where possible — the room's controls drive
-            // playback. Followers shouldn't be able to play/pause via the
-            // iframe directly since their events would be ignored anyway.
-            controls: 0,
+            // Keep native YouTube chrome available for the leader so quality,
+            // captions and playback-speed settings can be changed in place.
+            controls: 1,
             disablekb: 1,
             modestbranding: 1,
             rel: 0,
@@ -152,6 +154,12 @@ export function createYouTubePlayer(element: HTMLElement): YouTubePlayer {
                   break;
               }
               lastPosition = t;
+            },
+            onPlaybackRateChange: (event) => {
+              const rate = Number(event.data ?? player?.getPlaybackRate() ?? 1);
+              if (Number.isFinite(rate)) {
+                emit({ kind: 'rate', rate });
+              }
             },
           },
         });

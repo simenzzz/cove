@@ -60,7 +60,7 @@ export function createSyncController(player: YouTubePlayer): SyncController {
   return {
     apply(playback, isLeader) {
       clearRateRevert();
-      player.setRate(1);
+      player.setRate(playback.rate);
 
       // Load a different video if the queue advanced.
       // Returning early after cueVideo/loadVideo prevents the subsequent
@@ -75,6 +75,7 @@ export function createSyncController(player: YouTubePlayer): SyncController {
         } else {
           player.loadVideo(playback.video_id, start);
         }
+        player.setRate(playback.rate);
         return;
       }
       // If the video was cleared (queue emptied), forget the cached id so the
@@ -119,18 +120,18 @@ export function createSyncController(player: YouTubePlayer): SyncController {
       }
       if (abs > DRIFT_HARD_SEEK_MS) {
         clearRateRevert();
-        player.setRate(1);
+        player.setRate(playback.rate);
         player.seekTo(target);
         return;
       }
       // 200-500ms band: soft-correct via playback rate so the viewer just
       // perceives a slightly faster/slower stretch. drift > 0 = local ahead
       // of server, so slow down (0.99x).
-      const correctedRate = drift > 0 ? 0.99 : 1.01;
+      const correctedRate = playback.rate * (drift > 0 ? 0.99 : 1.01);
       player.setRate(correctedRate);
       clearRateRevert();
       rateRevertTimer = setTimeout(() => {
-        player.setRate(1);
+        player.setRate(playback.rate);
         rateRevertTimer = null;
       }, RATE_CORRECTION_DURATION_MS);
     },

@@ -177,7 +177,8 @@ pub fn build_router(state: AppState) -> Router {
             middleware::csrf::csrf_middleware,
         ));
 
-    // API + WS routes — rate limited
+    // API + WS routes. Login/register keep dedicated per-IP rate limits in
+    // their handlers; the rest of the API is intentionally not rate limited.
     let api_routes = Router::new()
         // Auth routes (per-IP rate limiting in handlers)
         .route("/api/auth/register", post(handlers::users::create_user))
@@ -302,10 +303,6 @@ pub fn build_router(state: AppState) -> Router {
             "/api/channels/{channel_id}/watch/recommendations",
             get(handlers::watch::get_recommendations),
         )
-        .layer(from_fn_with_state(
-            state.clone(),
-            middleware::api_rate_limit::api_rate_limit_middleware,
-        ))
         // WebSocket
         .route("/ws", get(ws::connection::handle_ws_upgrade));
 

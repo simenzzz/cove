@@ -17,9 +17,10 @@ describe('app top navigation', () => {
     expect(newPostIndex).toBeGreaterThan(messagesIndex);
   });
 
-  it('routes Messages through the latest-DM redirect handler', () => {
-    expect(source).toContain('openLatestDm');
+  it('routes Messages to the DM inbox', () => {
     expect(source).toContain('MessageCircle');
-    expect(source).not.toContain("href: '/dms'");
+    expect(source).toContain("href: '/dms'");
+    expect(source).not.toContain('openLatestDm');
+    expect(source).not.toContain('latestDmChannelId');
   });
 });

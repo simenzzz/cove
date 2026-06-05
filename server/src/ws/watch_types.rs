@@ -31,13 +31,13 @@ pub enum WatchCommand {
         reply_to: mpsc::Sender<String>,
     },
     /// Leader-only playback transition. `action` is one of `play | pause |
-    /// seek`. The actor checks the leader rule itself (defense in depth — the
-    /// rate-limit boundary at connection.rs already filters) and re-stamps
+    /// seek | rate`. The actor checks the leader rule itself and re-stamps
     /// `server_ts` before broadcasting so all followers share one clock.
     PlaybackControl {
         from_user: String,
         action: String,
         position_ms: i64,
+        rate: Option<f64>,
         reply_to: mpsc::Sender<String>,
     },
     /// Append to the queue. Anyone in the room can add. `nonce` echoes back
@@ -70,8 +70,8 @@ pub enum WatchCommand {
         from_user: String,
         reply_to: mpsc::Sender<String>,
     },
-    /// Fire-and-forget floating emoji broadcast. Validated and rate-limited
-    /// at the connection boundary; the actor just fans out.
+    /// Fire-and-forget floating emoji broadcast. Validated at the connection
+    /// boundary; the actor just fans out.
     Reaction {
         from_user: String,
         username: String,

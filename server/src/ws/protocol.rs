@@ -75,14 +75,15 @@ pub enum ClientMessage {
         channel_id: String,
         to_user_id: String,
     },
-    /// Leader-only. `action` is one of "play" | "pause" | "seek". `client_ts`
-    /// is the leader's local timestamp at emit; the server replaces it with
-    /// its own `server_ts` before broadcast.
+    /// Leader-only. `action` is one of "play" | "pause" | "seek" | "rate".
+    /// `client_ts` is the leader's local timestamp at emit; the server replaces
+    /// it with its own `server_ts` before broadcast.
     WatchPlayback {
         channel_id: String,
         action: String,
         position_ms: i64,
         client_ts: u64,
+        rate: Option<f64>,
     },
     WatchQueueAdd {
         channel_id: String,
@@ -277,6 +278,7 @@ pub enum ServerMessage {
         position_ms: i64,
         server_ts: u64,
         by_user: String,
+        rate: f64,
     },
     /// Periodic authoritative playback heartbeat (5s while not paused) so
     /// followers can correct drift without waiting for a transition.
@@ -285,6 +287,7 @@ pub enum ServerMessage {
         position_ms: i64,
         server_ts: u64,
         paused: bool,
+        rate: f64,
     },
     /// Diff broadcast after add/remove/score-reorder. Clients reconcile their
     /// local optimistic state against this.

@@ -12,7 +12,6 @@ use std::time::Instant;
 
 use tokio::sync::mpsc;
 
-use crate::middleware::rate_limit::{check_rate_limit, message_send_key, RateLimitConfig};
 use crate::models::channel::ChannelType;
 use crate::models::direct::DirectMessageSummary;
 use crate::ws::connection_helpers::check_channel_type_access;
@@ -73,8 +72,8 @@ pub async fn unsubscribe(
     subscriptions.remove(&channel_id);
 }
 
-/// `ChatMessage`: validate, rate-limit, sequence, persist, ack the sender, and
-/// broadcast to the room (excluding the sender).
+/// `ChatMessage`: validate, sequence, persist, ack the sender, and broadcast
+/// to the room (excluding the sender).
 #[allow(clippy::too_many_arguments)]
 pub async fn chat_message(
     state: &AppState,
@@ -119,30 +118,6 @@ pub async fn chat_message(
             .send(
                 ServerMessage::Error {
                     message: "Message must be 1-4000 characters".into(),
-                }
-                .to_json(),
-            )
-            .await;
-        return;
-    }
-
-    // Rate limit: 5 messages per 5 seconds per user per channel
-    let rate_key = message_send_key(user_id, &channel_id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: rate_key,
-            limit: 5,
-            window_secs: 5,
-        },
-    )
-    .await
-    .is_err()
-    {
-        let _ = out_tx
-            .send(
-                ServerMessage::Error {
-                    message: "Message rate limited".into(),
                 }
                 .to_json(),
             )

@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use surrealdb::RecordId;
 
+pub fn default_playback_rate() -> f64 {
+    1.0
+}
+
 /// One persistent watch room per `Watch` channel. Keyed by channel id, so the
 /// record id is `watch_room:<channel_id>`. Holds the durable slice of state
 /// that needs to survive server restarts; transient playback (current
@@ -18,6 +22,8 @@ pub struct WatchRoom {
     pub current_item: Option<RecordId>,
     pub playback_paused: bool,
     pub playback_position_ms: i64,
+    #[serde(default = "default_playback_rate")]
+    pub playback_rate: f64,
     pub playback_updated_at: Option<DateTime<Utc>>,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,

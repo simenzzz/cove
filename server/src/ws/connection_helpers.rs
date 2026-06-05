@@ -2,7 +2,6 @@ use std::collections::HashSet;
 
 use tokio::sync::mpsc;
 
-use crate::middleware::rate_limit::{check_rate_limit, watch_queue_op_key, RateLimitConfig};
 use crate::ws::protocol::ServerMessage;
 use crate::AppState;
 
@@ -110,40 +109,4 @@ pub(super) async fn send_watch_not_subscribed(out_tx: &mpsc::Sender<String>, cha
             .to_json(),
         )
         .await;
-}
-
-/// Apply the per-user-per-room queue-op rate limit. On rejection, surfaces a
-/// `watch_error{code:"rate_limited"}` so the optimistic client can roll its
-/// pending entry back. Returns `true` if the caller may proceed.
-pub(super) async fn check_watch_queue_rate(
-    state: &AppState,
-    user_id: &str,
-    channel_id: &str,
-    out_tx: &mpsc::Sender<String>,
-) -> bool {
-    let key = watch_queue_op_key(user_id, channel_id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: key,
-            limit: 10,
-            window_secs: 60,
-        },
-    )
-    .await
-    .is_err()
-    {
-        let _ = out_tx
-            .send(
-                ServerMessage::WatchError {
-                    channel_id: channel_id.to_string(),
-                    code: "rate_limited".into(),
-                    message: "Queue operation rate limited".into(),
-                }
-                .to_json(),
-            )
-            .await;
-        return false;
-    }
-    true
 }

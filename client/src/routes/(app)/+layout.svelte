@@ -6,9 +6,8 @@
   import { initBridge } from '$lib/ws/bridge';
   import { fetchServers } from '$stores/servers';
   import { fetchFriends, friends } from '$stores/friends';
-  import { fetchDms, latestDmChannelId } from '$stores/direct-messages';
+  import { fetchDms } from '$stores/direct-messages';
   import { notifications } from '$stores/notifications';
-  import { toasts } from '$stores/toast';
   import ServerSidebar from '$components/ServerSidebar.svelte';
   import { Newspaper, Compass, Users, MessageCircle, PenLine } from '@lucide/svelte';
   import { get } from 'svelte/store';
@@ -25,25 +24,12 @@
     { href: '/feed', label: 'Feed', icon: Newspaper },
     { href: '/explore', label: 'Explore', icon: Compass },
     { href: '/friends', label: 'Friends', icon: Users },
-    { label: 'Messages', icon: MessageCircle, action: openLatestDm, activePath: '/dms' },
+    { href: '/dms', label: 'Messages', icon: MessageCircle },
     { href: '/posts/new', label: 'New post', icon: PenLine },
   ];
 
   function isActive(href: string): boolean {
     return page.url.pathname === href || page.url.pathname.startsWith(`${href}/`);
-  }
-
-  async function openLatestDm() {
-    let id = get(latestDmChannelId);
-    if (!id) {
-      await fetchDms();
-      id = get(latestDmChannelId);
-    }
-    if (id) {
-      await goto(`/dms/${id}`);
-    } else {
-      toasts.info('No direct messages yet.');
-    }
   }
 
   async function initialize() {
@@ -69,8 +55,7 @@
   }
 
   // Auth gate: bounce unauthenticated users to /login BEFORE child pages
-  // (feed/friends/explore) can mount and fire token-less API calls — those
-  // were the source of the 401 → silent-refresh retry → 429 cascade. The root
+  // (feed/friends/explore) can mount and fire token-less API calls. The root
   // +layout.svelte also redirects unauthenticated users; that's intentional
   // defense-in-depth, but the `{#if $isAuthenticated}` render gate below is
   // what actually prevents the token-less fetches.
@@ -107,32 +92,17 @@
       >
         {#each navLinks as link}
           {@const Icon = link.icon}
-          {@const activePath = link.activePath ?? link.href}
-          {@const active = activePath ? isActive(activePath) : false}
-          {#if link.href}
-            <a
-              href={link.href}
-              aria-current={active ? 'page' : undefined}
-              class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-out-soft {active
-                ? 'bg-copper-soft text-copper-bright'
-                : 'text-linen-dim hover:bg-elevated hover:text-linen'}"
-            >
-              <Icon size={16} />
-              {link.label}
-            </a>
-          {:else}
-            <button
-              type="button"
-              aria-current={active ? 'page' : undefined}
-              onclick={link.action}
-              class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-out-soft {active
-                ? 'bg-copper-soft text-copper-bright'
-                : 'text-linen-dim hover:bg-elevated hover:text-linen'}"
-            >
-              <Icon size={16} />
-              {link.label}
-            </button>
-          {/if}
+          {@const active = isActive(link.href)}
+          <a
+            href={link.href}
+            aria-current={active ? 'page' : undefined}
+            class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-200 ease-out-soft {active
+              ? 'bg-copper-soft text-copper-bright'
+              : 'text-linen-dim hover:bg-elevated hover:text-linen'}"
+          >
+            <Icon size={16} />
+            {link.label}
+          </a>
         {/each}
       </nav>
       <div class="min-h-0 flex-1">

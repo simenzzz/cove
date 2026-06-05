@@ -18,7 +18,7 @@ http://{$DOMAIN} {
     handle @api {
         reverse_proxy server:3001 {
             # Forward original headers so the backend sees the real client IP
-            # for rate limiting + audit logging.
+            # for login/register throttling + audit logging.
             header_up X-Forwarded-For {http.request.remote.host}
             header_up X-Forwarded-Proto {http.request.scheme}
         }

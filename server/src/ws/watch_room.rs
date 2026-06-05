@@ -112,6 +112,17 @@ impl WatchRoomState {
 
 const GRACE_PERIOD: std::time::Duration = std::time::Duration::from_secs(30);
 const SYNC_PULSE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+const ALLOWED_PLAYBACK_RATES: [f64; 8] = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+fn normalize_playback_rate(rate: f64) -> Option<f64> {
+    if !rate.is_finite() {
+        return None;
+    }
+    ALLOWED_PLAYBACK_RATES
+        .iter()
+        .copied()
+        .find(|allowed| (rate - allowed).abs() < f64::EPSILON)
+}
 
 pub fn spawn_watch_room(
     channel_id: String,
@@ -155,6 +166,7 @@ pub fn spawn_watch_room(
                         state.current_duration_ms = item.duration_ms;
                         state.playback.position_ms = room.playback_position_ms;
                         state.playback.paused = true; // Restart from paused — leader resumes.
+                        state.playback.rate = room.playback_rate;
                         state.playback.server_ts = now_ms();
                         state.current_item_id = Some(current_id);
                     }
@@ -227,6 +239,7 @@ fn emit_sync_pulse(state: &mut WatchRoomState) {
         position_ms: projected,
         server_ts: now,
         paused: false,
+        rate: state.playback.rate,
     }
     .to_json();
     let dead = state.broadcast(msg, None);
@@ -245,6 +258,7 @@ async fn persist_playback(
                 current_item_id: state.current_item_id.clone(),
                 position_ms: state.playback.position_ms,
                 paused: state.playback.paused,
+                rate: state.playback.rate,
             },
         )
         .await
@@ -412,6 +426,7 @@ async fn handle_command(
             from_user,
             action,
             position_ms,
+            rate,
             reply_to,
         } => {
             if state.leader_id.as_deref() != Some(from_user.as_str()) {
@@ -428,7 +443,7 @@ async fn handle_command(
             let (new_paused, valid) = match action.as_str() {
                 "play" => (false, true),
                 "pause" => (true, true),
-                "seek" => (state.playback.paused, true),
+                "seek" | "rate" => (state.playback.paused, true),
                 _ => (state.playback.paused, false),
             };
             if !valid {
@@ -436,10 +451,24 @@ async fn handle_command(
                     &reply_to,
                     &state.channel_id,
                     "bad_action",
-                    "action must be play, pause, or seek",
+                    "action must be play, pause, seek, or rate",
                 );
                 return;
             }
+            let new_rate = if action == "rate" {
+                let Some(rate) = rate.and_then(normalize_playback_rate) else {
+                    send_error(
+                        &reply_to,
+                        &state.channel_id,
+                        "bad_rate",
+                        "rate must be a supported YouTube playback speed",
+                    );
+                    return;
+                };
+                rate
+            } else {
+                state.playback.rate
+            };
             // Reject negative positions — common cause is a bad client clock.
             let clamped = position_ms.max(0);
             let server_ts = now_ms();
@@ -447,6 +476,7 @@ async fn handle_command(
             state.playback.paused = new_paused;
             state.playback.position_ms = clamped;
             state.playback.server_ts = server_ts;
+            state.playback.rate = new_rate;
 
             // Persist before broadcast so the DB matches what followers see.
             if let Err(e) = persist_playback(state, watch_repo).await {
@@ -471,6 +501,7 @@ async fn handle_command(
                 position_ms: clamped,
                 server_ts,
                 by_user: from_user,
+                rate: state.playback.rate,
             }
             .to_json();
             let dead = state.broadcast(msg, None);
@@ -837,4 +868,50 @@ fn broadcast_advance(state: &mut WatchRoomState) {
     .to_json();
     let dead = state.broadcast(msg, None);
     state.reap_dead(dead);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::repositories::watch::MockWatchRepo;
+
+    #[test]
+    fn normalize_playback_rate_accepts_youtube_menu_rates() {
+        for rate in [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0] {
+            assert_eq!(normalize_playback_rate(rate), Some(rate));
+        }
+    }
+
+    #[test]
+    fn normalize_playback_rate_rejects_unsupported_rates() {
+        for rate in [0.0, 0.1, 0.99, 2.25, f64::NAN, f64::INFINITY] {
+            assert_eq!(normalize_playback_rate(rate), None);
+        }
+    }
+
+    #[tokio::test]
+    async fn persist_playback_includes_authoritative_rate() {
+        let mut repo = MockWatchRepo::new();
+        repo.expect_save_playback()
+            .withf(|channel_id, leader_id, playback| {
+                channel_id == "watch1"
+                    && leader_id.as_deref() == Some("leader1")
+                    && playback.current_item_id.as_deref() == Some("item1")
+                    && playback.position_ms == 42_000
+                    && playback.paused
+                    && (playback.rate - 1.5).abs() < f64::EPSILON
+            })
+            .times(1)
+            .returning(|_, _, _| Ok(()));
+
+        let mut state = WatchRoomState::new("watch1".into());
+        state.leader_id = Some("leader1".into());
+        state.current_item_id = Some("item1".into());
+        state.playback.position_ms = 42_000;
+        state.playback.paused = true;
+        state.playback.rate = 1.5;
+
+        let repo: Arc<dyn WatchRepo> = Arc::new(repo);
+        persist_playback(&state, &repo).await.unwrap();
+    }
 }

@@ -27,6 +27,7 @@ import {
   sendQueueAdd,
   sendQueueRemove,
   sendVote,
+  sendPlayback,
   parseYouTubeId,
 } from './watch';
 
@@ -91,6 +92,33 @@ describe('watch_state / playback handlers', () => {
     const pb = get(watchRoomStore(CH))!.playback;
     expect(pb.paused).toBe(false);
     expect(pb.position_ms).toBe(200);
+  });
+
+  it('watch_playback rate updates room playback rate without toggling pause', () => {
+    emit('watch_playback', { channel_id: CH, action: 'pause', position_ms: 0, server_ts: 1 });
+    emit('watch_playback', {
+      channel_id: CH,
+      action: 'rate',
+      position_ms: 250,
+      server_ts: 8,
+      rate: 1.5,
+    });
+    const pb = get(watchRoomStore(CH))!.playback;
+    expect(pb.paused).toBe(true);
+    expect(pb.position_ms).toBe(250);
+    expect(pb.rate).toBe(1.5);
+  });
+
+  it('watch_sync_pulse carries the authoritative playback rate', () => {
+    emit('watch_sync_pulse', {
+      channel_id: CH,
+      position_ms: 500,
+      server_ts: 10,
+      paused: false,
+      rate: 1.25,
+    });
+    const pb = get(watchRoomStore(CH))!.playback;
+    expect(pb.rate).toBe(1.25);
   });
 
   it('watch_leader_changed re-flags the viewers', () => {
@@ -185,6 +213,21 @@ describe('sendQueueRemove', () => {
     sendQueueRemove(CH, 'q1');
     expect(get(watchRoomStore(CH))!.queue).toHaveLength(0);
     expect(ws.send).toHaveBeenCalledWith({ v: 1, type: 'watch_queue_remove', channel_id: CH, item_id: 'q1' });
+  });
+});
+
+describe('sendPlayback', () => {
+  it('includes playback rate when provided', () => {
+    sendPlayback(CH, 'rate', 1200, 1.5);
+    expect(ws.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'watch_playback',
+        channel_id: CH,
+        action: 'rate',
+        position_ms: 1200,
+        rate: 1.5,
+      }),
+    );
   });
 });
 

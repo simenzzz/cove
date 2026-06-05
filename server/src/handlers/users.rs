@@ -14,8 +14,7 @@ use crate::auth::ws_ticket;
 use crate::error::AppError;
 use crate::middleware::csrf;
 use crate::middleware::rate_limit::{
-    auth_login_key, auth_refresh_key, auth_register_key, auth_ws_ticket_key, check_rate_limit,
-    RateLimitConfig,
+    auth_login_key, auth_register_key, check_rate_limit, RateLimitConfig,
 };
 use crate::models::user::CreateUser;
 use crate::validation;
@@ -346,25 +345,6 @@ pub async fn refresh(
         .await?
         .ok_or_else(|| AppError::Unauthorized("Invalid refresh token".into()))?;
 
-    // Per-user rate limit (1 / 5s): detects leaked-token replay.
-    check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: auth_refresh_key(&user_id),
-            limit: 1,
-            window_secs: 5,
-        },
-    )
-    .await
-    .inspect_err(|_| {
-        tracing::warn!(
-            event = "auth_rate_limited",
-            endpoint = "/api/auth/refresh",
-            user = %user_id,
-            "rate-limit hit on refresh"
-        );
-    })?;
-
     let consumed_user_id = refresh::consume_refresh_token(&state.redis, &old_refresh)
         .await?
         .ok_or_else(|| AppError::Unauthorized("Invalid refresh token".into()))?;
@@ -403,26 +383,6 @@ pub async fn ws_ticket(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<WsTicketResponse>, AppError> {
-    // Per-user rate limit on ticket issuance. Allows small multi-tab/reconnect
-    // bursts without letting a client mint unbounded one-shot credentials.
-    check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: auth_ws_ticket_key(&auth.0.sub),
-            limit: 5,
-            window_secs: 10,
-        },
-    )
-    .await
-    .inspect_err(|_| {
-        tracing::warn!(
-            event = "auth_rate_limited",
-            endpoint = "/api/auth/ws-ticket",
-            user = %auth.0.sub,
-            "rate-limit hit on ws-ticket"
-        );
-    })?;
-
     let ticket = ws_ticket::generate_ticket();
     let nonce = ws_ticket::generate_nonce();
     ws_ticket::store_ticket(&state.redis, &ticket, &auth.0.sub, &nonce).await?;

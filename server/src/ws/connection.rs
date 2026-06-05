@@ -586,6 +586,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         action,
                         position_ms,
                         client_ts: _,
+                        rate,
                     } => {
                         watch_handlers::playback(
                             &state,
@@ -595,6 +596,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                             channel_id,
                             action,
                             position_ms,
+                            rate,
                         )
                         .await;
                     }

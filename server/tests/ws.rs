@@ -89,8 +89,6 @@ async fn spawn_app() -> TestApp {
         server_port: 0,
         secure_cookies: false,
         cors_origin: "http://localhost:3000".to_string(),
-        api_rate_limit: 100_000,
-        api_rate_window_secs: 10,
     };
 
     // Non-installing handle: the global metrics recorder may only be installed
@@ -105,7 +103,7 @@ async fn spawn_app() -> TestApp {
     let schema = include_str!("../../db/init.surql");
     state.db.query(schema).await.expect("load schema");
 
-    // Clear shared Redis state (rate limits, sequences, presence, tickets).
+    // Clear shared Redis state (auth throttles, sequences, presence, tickets).
     let mut conn = state.redis.get().await.expect("redis conn");
     let _: () = redis::cmd("FLUSHDB")
         .query_async(&mut conn)

@@ -7,12 +7,7 @@ use std::collections::HashSet;
 
 use tokio::sync::mpsc;
 
-use crate::middleware::rate_limit::{
-    check_rate_limit, watch_playback_control_key, watch_reaction_key, RateLimitConfig,
-};
-use crate::ws::connection_helpers::{
-    check_watch_channel_access, check_watch_queue_rate, send_watch_not_subscribed,
-};
+use crate::ws::connection_helpers::{check_watch_channel_access, send_watch_not_subscribed};
 use crate::ws::protocol::ServerMessage;
 use crate::ws::watch_types::WatchCommand;
 use crate::AppState;
@@ -84,12 +79,6 @@ pub async fn transfer_leader(
         send_watch_not_subscribed(out_tx, &channel_id).await;
         return;
     }
-    // Transfer broadcasts to every viewer, so a leader ping-ponging leadership
-    // is a fan-out amplifier. Reuse the queue-op bucket — it's already keyed
-    // per user per room and gives 10/min, plenty for legitimate use.
-    if !check_watch_queue_rate(state, user_id, &channel_id, out_tx).await {
-        return;
-    }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
         let _ = room
             .send(WatchCommand::TransferLeader {
@@ -109,35 +98,10 @@ pub async fn playback(
     channel_id: String,
     action: String,
     position_ms: i64,
+    rate: Option<f64>,
 ) {
     if !watch_subscriptions.contains(&channel_id) {
         send_watch_not_subscribed(out_tx, &channel_id).await;
-        return;
-    }
-    // Rate cap: 10/sec per user per room. Leader is one user so this is a
-    // per-leader cap. Defense against a runaway client looping seek events.
-    let rate_key = watch_playback_control_key(user_id, &channel_id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: rate_key,
-            limit: 10,
-            window_secs: 1,
-        },
-    )
-    .await
-    .is_err()
-    {
-        let _ = out_tx
-            .send(
-                ServerMessage::WatchError {
-                    channel_id,
-                    code: "rate_limited".into(),
-                    message: "Playback control rate limited".into(),
-                }
-                .to_json(),
-            )
-            .await;
         return;
     }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
@@ -146,6 +110,7 @@ pub async fn playback(
                 from_user: user_id.to_string(),
                 action,
                 position_ms,
+                rate,
                 reply_to: out_tx.clone(),
             })
             .await;
@@ -179,9 +144,6 @@ pub async fn queue_add(
         let _ = out_tx.send(err).await;
         return;
     }
-    if !check_watch_queue_rate(state, user_id, &channel_id, out_tx).await {
-        return;
-    }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
         let _ = room
             .send(WatchCommand::QueueAdd {
@@ -209,9 +171,6 @@ pub async fn queue_remove(
         send_watch_not_subscribed(out_tx, &channel_id).await;
         return;
     }
-    if !check_watch_queue_rate(state, user_id, &channel_id, out_tx).await {
-        return;
-    }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
         let _ = room
             .send(WatchCommand::QueueRemove {
@@ -236,9 +195,6 @@ pub async fn vote(
         send_watch_not_subscribed(out_tx, &channel_id).await;
         return;
     }
-    if !check_watch_queue_rate(state, user_id, &channel_id, out_tx).await {
-        return;
-    }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
         let _ = room
             .send(WatchCommand::Vote {
@@ -260,9 +216,6 @@ pub async fn skip(
 ) {
     if !watch_subscriptions.contains(&channel_id) {
         send_watch_not_subscribed(out_tx, &channel_id).await;
-        return;
-    }
-    if !check_watch_queue_rate(state, user_id, &channel_id, out_tx).await {
         return;
     }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
@@ -294,30 +247,6 @@ pub async fn reaction(
     if trimmed.is_empty() || trimmed.len() > 32 {
         return;
     }
-    let rate_key = watch_reaction_key(user_id, &channel_id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: rate_key,
-            limit: 5,
-            window_secs: 1,
-        },
-    )
-    .await
-    .is_err()
-    {
-        let _ = out_tx
-            .send(
-                ServerMessage::WatchError {
-                    channel_id,
-                    code: "rate_limited".into(),
-                    message: "Reaction rate limited".into(),
-                }
-                .to_json(),
-            )
-            .await;
-        return;
-    }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {
         let _ = room
             .send(WatchCommand::Reaction {
@@ -339,24 +268,6 @@ pub async fn progress(
 ) {
     if !watch_subscriptions.contains(&channel_id) {
         send_watch_not_subscribed(out_tx, &channel_id).await;
-        return;
-    }
-    // Defense-in-depth cap on the progress stream. The leader's client emits
-    // ~once every 5s; a hostile or bugged leader spamming faster would still
-    // be bounded by the actor's `current_recorded` one-shot gate, but
-    // rate-limiting also protects the per-op `Progress` mailbox slot.
-    let rate_key = watch_playback_control_key(user_id, &channel_id);
-    if check_rate_limit(
-        &state.redis,
-        &RateLimitConfig {
-            key_prefix: rate_key,
-            limit: 10,
-            window_secs: 1,
-        },
-    )
-    .await
-    .is_err()
-    {
         return;
     }
     if let Some(room) = state.watch_manager.get_room(&channel_id).await {

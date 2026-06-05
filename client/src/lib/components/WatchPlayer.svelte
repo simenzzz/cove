@@ -22,7 +22,7 @@
   // string key (action + ts + video) so we don't re-apply identical updates
   // and accidentally yank the leader's seek bar.
   $effect(() => {
-    const key = `${playback.video_id ?? ''}|${playback.server_ts}|${playback.paused}|${playback.position_ms}`;
+    const key = `${playback.video_id ?? ''}|${playback.server_ts}|${playback.paused}|${playback.position_ms}|${playback.rate}`;
     if (!sync || key === lastApplyKey) return;
     lastApplyKey = key;
     sync.apply(playback, isLeader);
@@ -43,7 +43,7 @@
     sync.apply(playback, isLeader);
 
     // The leader's local player events flow upstream to the server. Followers
-    // never emit (their player is locked via controls=0 anyway).
+    // never emit because their iframe is covered by the follower overlay.
     player.on((e) => {
       if (!isLeader) return;
       switch (e.kind) {
@@ -55,6 +55,11 @@
           break;
         case 'seek':
           sendPlayback(channelId, 'seek', e.position_ms);
+          break;
+        case 'rate':
+          if (Math.abs(e.rate - playback.rate) > 0.001) {
+            sendPlayback(channelId, 'rate', player!.getPosition(), e.rate);
+          }
           break;
         case 'ended':
           // Nudge the server with a final progress at full duration so it
@@ -68,8 +73,8 @@
 
   // Re-arm the leader progress reporter whenever leadership changes. The 5s
   // cadence matches the server's sync pulse interval — frequent enough that
-  // completion detection fires within seconds of the threshold, cheap enough
-  // that there's no rate-limit pressure.
+  // completion detection fires within seconds of the threshold without
+  // generating unnecessary traffic.
   $effect(() => {
     if (progressInterval) {
       clearInterval(progressInterval);
@@ -112,9 +117,8 @@
     width: 100%;
     height: 100%;
   }
-  /* For followers, swallow pointer events so they can't try to use the
-     native iframe controls (which YouTube exposes intermittently even with
-     controls=0). */
+  /* For followers, swallow pointer events so they can't use the native
+     iframe controls while still seeing room-synced playback. */
   .follower-overlay {
     position: absolute;
     inset: 0;
