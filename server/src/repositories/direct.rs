@@ -24,6 +24,14 @@ struct PeerRow {
     user: surrealdb::RecordId,
 }
 
+#[derive(Debug, Deserialize)]
+struct VisibleDirectRow {
+    out: surrealdb::RecordId,
+}
+
+const LIST_VISIBLE_DIRECTS_QUERY: &str =
+    "SELECT out, created_at FROM direct_visible WHERE in = $user ORDER BY created_at DESC";
+
 #[async_trait]
 pub trait DirectMessageRepo: Send + Sync {
     async fn open(
@@ -153,14 +161,14 @@ impl DirectMessageRepo for SurrealDirectMessageRepo {
     ) -> Result<Vec<DirectMessageSummary>, AppError> {
         let mut result = self
             .db
-            .query("SELECT VALUE out FROM direct_visible WHERE in = $user ORDER BY created_at DESC")
+            .query(LIST_VISIBLE_DIRECTS_QUERY)
             .bind(("user", surrealdb::RecordId::from(("user", user_id))))
             .await?;
-        let channels: Vec<surrealdb::RecordId> = result.take(0)?;
+        let channels: Vec<VisibleDirectRow> = result.take(0)?;
         let mut summaries = Vec::new();
 
-        for channel_rid in channels {
-            let channel_id = channel_rid.key().to_string();
+        for row in channels {
+            let channel_id = row.out.key().to_string();
             if !self.can_access(&channel_id, user_id, social).await? {
                 continue;
             }
@@ -318,6 +326,15 @@ mod tests {
             direct_channel_id("bob", "alice")
         );
         assert!(direct_channel_id("alice", "bob").starts_with("dm_"));
+    }
+
+    #[test]
+    fn list_visible_directs_query_orders_by_selected_rows() {
+        // SurrealDB rejects `SELECT VALUE out ... ORDER BY created_at` because
+        // `created_at` is not available in a VALUE projection.
+        assert!(LIST_VISIBLE_DIRECTS_QUERY.starts_with("SELECT out, created_at FROM"));
+        assert!(!LIST_VISIBLE_DIRECTS_QUERY.contains("SELECT VALUE"));
+        assert!(LIST_VISIBLE_DIRECTS_QUERY.contains("ORDER BY created_at DESC"));
     }
 
     #[tokio::test]

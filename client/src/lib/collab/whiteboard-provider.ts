@@ -19,6 +19,13 @@ export interface LayerMeta {
   z_index: number;
 }
 
+const DEFAULT_LAYER_META: LayerMeta = {
+  id: DEFAULT_LAYER_ID,
+  name: 'Default',
+  locked: false,
+  z_index: 0,
+};
+
 /**
  * Y.Doc-bound whiteboard binding. The CRDT shape is opaque to the server —
  * shapes/layers/meta live entirely in Y roots defined here. Mutations should
@@ -85,7 +92,7 @@ export class WhiteboardProvider extends BaseProvider {
         z_index: (m.get('z_index') as number) ?? 0,
       });
     }
-    return out.sort((a, b) => a.z_index - b.z_index);
+    return normalizeLayerMetas(out);
   }
 
   /** Toggle lock state on a layer. Locked layers reject edits client-side. */
@@ -110,4 +117,34 @@ function layerIndex(layers: Y.Array<Y.Map<unknown>>, layerId: string): number {
     if (layers.get(i).get('id') === layerId) return i;
   }
   return -1;
+}
+
+export function normalizeLayerMetas(layers: LayerMeta[]): LayerMeta[] {
+  const byId = new Map<string, LayerMeta>();
+
+  for (const layer of layers) {
+    const id = layer.id.trim();
+    if (!id) continue;
+
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, {
+        id,
+        name: layer.name.trim() || (id === DEFAULT_LAYER_ID ? 'Default' : id),
+        locked: layer.locked,
+        z_index: layer.z_index,
+      });
+      continue;
+    }
+
+    byId.set(id, {
+      id,
+      name: existing.name || layer.name.trim() || (id === DEFAULT_LAYER_ID ? 'Default' : id),
+      locked: existing.locked || layer.locked,
+      z_index: Math.min(existing.z_index, layer.z_index),
+    });
+  }
+
+  const normalized = Array.from(byId.values()).sort((a, b) => a.z_index - b.z_index);
+  return normalized.length > 0 ? normalized : [DEFAULT_LAYER_META];
 }

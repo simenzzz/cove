@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { page } from '$app/state';
   import ChannelList from '$components/ChannelList.svelte';
   import DrawingTools from '$components/DrawingTools.svelte';
@@ -30,16 +29,37 @@
   let saveVersionOpen = $state(false);
   let restoreOpen = $state(false);
   let checkpointToRestore: WhiteboardCheckpoint | null = $state(null);
+  let loadToken = 0;
 
-  onMount(async () => {
-    if (!serverId || !channelId) return;
-    await fetchChannels(serverId);
-    try {
-      snapshot = await fetchWhiteboard(channelId);
-      checkpoints = await listCheckpoints(channelId);
-    } catch (e) {
-      error = e instanceof Error ? e.message : String(e);
-    }
+  $effect(() => {
+    const sid = serverId;
+    const cid = channelId;
+    if (!sid || !cid) return;
+
+    const token = ++loadToken;
+    snapshot = null;
+    checkpoints = [];
+    provider = null;
+    error = '';
+    checkpointToRestore = null;
+    saveVersionOpen = false;
+    restoreOpen = false;
+
+    void (async () => {
+      await fetchChannels(sid);
+      try {
+        const [nextSnapshot, nextCheckpoints] = await Promise.all([
+          fetchWhiteboard(cid),
+          listCheckpoints(cid),
+        ]);
+        if (token !== loadToken) return;
+        snapshot = nextSnapshot;
+        checkpoints = nextCheckpoints;
+      } catch (e) {
+        if (token !== loadToken) return;
+        error = e instanceof Error ? e.message : String(e);
+      }
+    })();
   });
 
   function onSaveVersion() {
@@ -95,11 +115,13 @@
 
     <div class="flex items-start gap-3">
       {#if snapshot}
-        <Whiteboard
-          {channelId}
-          initialStateB64={snapshot.state_b64}
-          onReady={(p) => (provider = p)}
-        />
+        {#key channelId}
+          <Whiteboard
+            {channelId}
+            initialStateB64={snapshot.state_b64}
+            onReady={(p) => (provider = p)}
+          />
+        {/key}
       {:else}
         <div class="text-sm text-linen-muted">Loading whiteboard…</div>
       {/if}

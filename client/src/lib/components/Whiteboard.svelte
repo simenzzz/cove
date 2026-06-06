@@ -99,7 +99,6 @@
       }
     }
 
-    provider.ensureLayer(DEFAULT_LAYER_ID, 'Default');
     refreshLayers();
     onReady?.(provider);
     detachProvider = attachProviderListeners(provider);
@@ -125,7 +124,6 @@
       provider?.destroy();
       peers = {}; // stale peer cursors from the old session shouldn't linger
       provider = new WhiteboardProvider(channelId);
-      provider.ensureLayer(DEFAULT_LAYER_ID, 'Default');
       refreshLayers();
       onReady?.(provider);
       detachProvider = attachProviderListeners(provider);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import type { WhiteboardProvider, LayerMeta } from '$lib/collab/whiteboard-provider';
   import { layerVisibility, toolState } from '$lib/stores/whiteboards';
   import TextInputDialog from '$components/ui/TextInputDialog.svelte';
@@ -21,8 +22,13 @@
     return () => provider!.layers.unobserveDeep(refresh);
   });
 
-  layerVisibility.subscribe((v) => (visibility = v));
-  toolState.subscribe((s) => (activeId = s.activeLayerId));
+  const offLayerVisibility = layerVisibility.subscribe((v) => (visibility = v));
+  const offToolState = toolState.subscribe((s) => (activeId = s.activeLayerId));
+
+  onDestroy(() => {
+    offLayerVisibility();
+    offToolState();
+  });
 
   function toggleVisible(id: string) {
     layerVisibility.update((v) => ({ ...v, [id]: !(v[id] !== false) }));

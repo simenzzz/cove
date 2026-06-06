@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { toolState, type ToolKind } from '$lib/stores/whiteboards';
 
   const TOOLS: { kind: ToolKind; label: string }[] = [
@@ -16,11 +17,13 @@
   let color = $state('#222222');
   let width = $state(3);
 
-  toolState.subscribe((s) => {
+  const offToolState = toolState.subscribe((s) => {
     current = s.tool;
     color = s.color;
     width = s.strokeWidth;
   });
+
+  onDestroy(offToolState);
 
   function setTool(kind: ToolKind) {
     toolState.update((s) => ({ ...s, tool: kind }));
